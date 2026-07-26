@@ -109,7 +109,7 @@ export function buildRouterPrompt(): string {
     "",
     "2. MESSAGE operations on the conversation shown below, via `messageActions`:",
     '   - {"kind":"translateMessage","messageId":<id>,"targetLanguage":<language name, e.g. "French">} — translate one message (any language). Examples: "translate to French", "translate to Japanese", "translate to English" (also recognizes "text" and "message" as synonyms).',
-    '   - {"kind":"editMessage","messageId":<id>,"newText":<string>} — replace a message\'s text. If the user asks to rephrase/reword/make it formal/etc., YOU write the new wording and put it in newText. Examples: "edit my last message to hello", "fix the typo in my first text to 'hi'".',
+    '   - {"kind":"editMessage","messageId":<id>,"newText":<string>} — replace a message\'s text. If the user asks to rephrase/reword/make it formal/etc., YOU write the new wording and put it in newText. Examples: "edit my last message to hello", "fix the typo in my first text to \'hi\'".',
     '   - {"kind":"deleteMessage","messageId":<id>} — remove a message. Examples: "delete my last message", "remove my first text", "erase that".',
     '   - {"kind":"reactToMessage","messageId":<id>,"emoji":<single emoji>} — add an emoji reaction. Examples: "react to the last message with 👍", "add a 🔥 to Sam\'s message".',
     "",
