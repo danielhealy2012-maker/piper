@@ -236,11 +236,23 @@ create policy messages_insert on public.messages
   for insert to authenticated
   with check (author_id = auth.uid() and public.is_conversation_member(conversation_id));
 drop policy if exists messages_update_own on public.messages;
-create policy messages_update_own on public.messages
-  for update to authenticated using (author_id = auth.uid()) with check (author_id = auth.uid());
+create policy messages_update_any_member on public.messages
+  for update to authenticated using (
+    exists (select 1 from public.conversation_members
+      where conversation_members.conversation_id = messages.conversation_id
+        and conversation_members.user_id = auth.uid())
+  ) with check (
+    exists (select 1 from public.conversation_members
+      where conversation_members.conversation_id = messages.conversation_id
+        and conversation_members.user_id = auth.uid())
+  );
 drop policy if exists messages_delete_own on public.messages;
-create policy messages_delete_own on public.messages
-  for delete to authenticated using (author_id = auth.uid());
+create policy messages_delete_any_member on public.messages
+  for delete to authenticated using (
+    exists (select 1 from public.conversation_members
+      where conversation_members.conversation_id = messages.conversation_id
+        and conversation_members.user_id = auth.uid())
+  );
 
 -- SHARED: reactions on any message in your conversations; rows are your own.
 drop policy if exists reactions_read on public.reactions;
