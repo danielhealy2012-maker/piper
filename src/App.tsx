@@ -163,7 +163,23 @@ function MultiplayerWorkspace({
     return createSupabaseBackend(conversationId, userId);
   }, [conversationId, userId]);
   const [copied, setCopied] = useState(false);
+  const [otherUser, setOtherUser] = useState<{ id: string; name: string } | null>(null);
   const inviteUrl = `${window.location.origin}/join/${inviteCode}`;
+
+  // Fetch conversation members to display the other person's name
+  useEffect(() => {
+    void (async () => {
+      try {
+        const users = await backend.getUsers();
+        const other = users.find((u) => u.id !== userId);
+        if (other) {
+          setOtherUser({ id: other.id, name: other.name });
+        }
+      } catch (err) {
+        console.error("Failed to fetch users:", err);
+      }
+    })();
+  }, [backend, userId]);
 
   return (
     <Workspace
@@ -171,7 +187,18 @@ function MultiplayerWorkspace({
       headerSlot={
         <div className="flex flex-col gap-2 rounded-xl border border-black/10 bg-white px-3 py-2 text-xs">
           <div className="flex items-center justify-between gap-2">
-            <span className="truncate text-black/60">Signed in as {email}</span>
+            <div className="truncate text-black/60">
+              {otherUser ? (
+                <>
+                  <span className="font-medium">{otherUser.name}</span>
+                  <span className="mx-1">↔</span>
+                  <span className="font-medium">You</span>
+                  <span className="mx-1 block text-black/40">({email})</span>
+                </>
+              ) : (
+                <span>Signed in as {email}</span>
+              )}
+            </div>
             <button
               type="button"
               onClick={() => void signOut()}
