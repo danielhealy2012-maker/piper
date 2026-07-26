@@ -7,6 +7,7 @@ import {
   type ComponentName,
 } from "./registry";
 import { DEFAULT_SPEC, specsEqual, validateSpec, type Action, type Spec } from "./spec";
+import { enforceLegibility } from "./legibility";
 import { apiPost } from "../lib/api";
 
 export const ESCALATION_MODEL = "claude-opus-4-8";
@@ -615,9 +616,14 @@ export function buildSystemPrompt(): string {
     "",
     "ESCAPE HATCHES — for anything the token list above can't express (unusual shapes, glows, custom animations, effects on events). Use these INSTEAD of forcing a request into a token that doesn't really fit.",
     "",
-    '1. `customCSS` — an object keyed by zone: "bubbleOutgoing", "bubbleIncoming", "background", "header". Each zone\'s value is an object of real CSS properties in camelCase (React inline-style syntax, e.g. "backgroundColor", "clipPath", "boxShadow", "border", "filter", "animation"), with plain string values (e.g. "clipPath": "polygon(...)" for a non-rectangular bubble shape, "boxShadow": "0 0 12px 4px #fff" for a glow). This is how you do things tokens can\'t: cloud/blob-shaped bubbles via clipPath, glows, custom borders beyond the border tokens, textured backgrounds, etc. These merge on TOP of the theme tokens — you don\'t need to also set the token version of something you\'re overriding here.',
+    '1. `customCSS` — an object keyed by zone: "bubbleOutgoing", "bubbleIncoming", "background", "header". Each zone\'s value is an object of real CSS properties in camelCase (React inline-style syntax, e.g. "backgroundColor", "clipPath", "boxShadow", "border", "filter", "animation"), with plain string values. This is how you do things tokens can\'t: glows, custom borders beyond the border tokens, textured backgrounds, unusual shapes, etc. These merge on TOP of the theme tokens — you don\'t need to also set the token version of something you\'re overriding here.',
     '2. `customCSSText` — a string of raw CSS, injected verbatim in a <style> tag. This is the ONLY place `@keyframes` can be defined. If you want an animated bubble (pulse, wobble, wiggle), define the `@keyframes` here and reference the animation by name in customCSS\'s `animation` property for the relevant zone.',
     '3. `customEffects` — an object with optional keys "onMessageReceived", "onMessageSent", "onReaction", each a STRING of plain JavaScript (a function body, not a full function). It runs once whenever that event fires, with one variable available: `container`, a real DOM element positioned over the whole chat. Use plain DOM APIs (document.createElement, container.appendChild, style properties, setTimeout to clean up) to build one-shot effects — confetti bursts, floating emoji, screen flashes, particle pops. Always remove anything you create (e.g. via setTimeout) so effects don\'t pile up. Example onMessageReceived value: "for (let i = 0; i < 20; i++) { const p = document.createElement(\'div\'); p.textContent = \'🎉\'; p.style.position = \'absolute\'; p.style.left = Math.random()*100 + \'%\'; p.style.top = \'-20px\'; p.style.fontSize = \'20px\'; p.style.transition = \'transform 1.2s ease-in, opacity 1.2s\'; container.appendChild(p); requestAnimationFrame(() => { p.style.transform = \'translateY(300px)\'; p.style.opacity = \'0\'; }); setTimeout(() => p.remove(), 1300); }"',
+    "",
+    "LEGIBILITY IS NON-NEGOTIABLE. Every message must stay fully readable after your change — never let a shape, clip, mask, texture, or color combination cover, crop, or wash out the text. Concretely:",
+    '- If you touch `color` or the bubble\'s background anywhere (token or customCSS), keep them at strong contrast (dark text on light backgrounds, light text on dark ones).',
+    '- For unusual bubble SHAPES (e.g. "cloud-shaped", "blob-shaped"), prefer an irregular `borderRadius` (e.g. "255px 15px 225px 15px / 15px 225px 15px 255px") or layered `boxShadow` "puffs" around the edge — these read as soft/rounded/cloud-like without ever touching the interior where the text sits. AVOID `clipPath` for bubble shapes: a clip-path crops the box itself, and an imprecise polygon (the usual failure mode) slices straight through letters. If you do use `clipPath`, keep it in the outer ~15% margin of the box and set generous padding (at least "0.85rem 1.2rem") so the entire text area sits inside the untouched center.',
+    "- Never set an animation that moves, rotates, or fades the text itself to the point of unreadability — animate a border, glow, or background instead of the bubble's content box when in doubt.",
     "",
     "Use the token list for anything it already covers (colors, fonts, corner style, tail, borders, backgrounds) — it's simpler and cheaper. Reach for the escape hatches only when the request genuinely needs a shape, glow, animation, or one-shot effect the tokens don't have a slot for. Leave customCSS zones/customCSSText/customEffects keys you're not touching as empty/null rather than guessing values for them.",
     "",
@@ -669,7 +675,7 @@ async function callModel(instruction: string, current: Spec, model?: string): Pr
   if (!validated.ok) {
     return { status: "invalid", error: validated.error };
   }
-  return { status: "ok", spec: validated.spec };
+  return { status: "ok", spec: enforceLegibility(validated.spec) };
 }
 
 export interface GenerateResult {

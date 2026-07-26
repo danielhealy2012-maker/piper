@@ -202,7 +202,7 @@ export function buildRouterPrompt(): string {
     "",
     "THREE kinds of changes you can make:",
     "",
-    "1. APPEARANCE — theme/UI via `themeInstruction` (a plain-language request, e.g. 'green bubbles', 'dark mode'). Or explicit theme mutations: `themeMutation: 'reset'` or `'randomize'`. Leave both null if the request has no appearance part.",
+    "1. APPEARANCE — theme/UI/visual effects via `themeInstruction` (a plain-language request, passed through close to verbatim so the theming engine sees the full intent). This covers colors, fonts, backgrounds, bubble shapes/borders/glows, AND animations or one-shot effects triggered by events — e.g. \"pop confetti when I receive a message\", \"flash the screen on a reaction\", \"make my bubbles pulse\". These effect/animation requests are ALWAYS appearance, never a separate unsupported category — do not reject them as infeasible. Or explicit theme mutations: `themeMutation: 'reset'` or `'randomize'`. Leave both null only if the request has no appearance part at all.",
     "",
     "2. CONVERSATION — `conversationTitle` to rename, or `clearConversation: true` to delete all messages.",
     "",
@@ -237,7 +237,7 @@ export function buildRouterPrompt(): string {
     '{"messageActions":[...],"themeInstruction":<string|null>,"themeMutation":<"reset"|"randomize"|null>,"conversationTitle":<string|null>,"clearConversation":<boolean>,"reply":<string>,"feasible":<boolean>}',
     "",
     "`reply`: one sentence. If done, say what you did. If not, explain why and suggest alternatives.",
-    "`feasible`: false only if you produced nothing at all.",
+    "`feasible`: false only if you produced nothing at all. Visual effects, animations, and on-event triggers (confetti, flashes, pulsing, glows, etc.) are ALWAYS achievable via themeInstruction — never mark these infeasible or claim Piper can't do them.",
     "",
     "Return raw JSON only — no markdown.",
   ].join("\n");
