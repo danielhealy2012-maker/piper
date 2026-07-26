@@ -4,6 +4,7 @@ import type { TranslationEntry } from "./components/slots";
 import { generateSpec, keywordOnly } from "./engine/generate";
 import { routeInstruction } from "./engine/route";
 import { translateText } from "./engine/translate";
+import { generateResponse, suggestReplies, summarizeConversation } from "./lib/queries";
 import { DEFAULT_SPEC, type Spec } from "./engine/spec";
 import type { ChatBackend, DisplayUser } from "./lib/backend";
 import type { ChatMessage } from "./lib/types";
@@ -365,20 +366,36 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
         }
 
         if (action.kind === "summarizeConversation") {
-          // Placeholder for now - would call /api/summarize
-          applied.push("generated summary (API coming soon)");
+          const result = await summarizeConversation(messages, users);
+          if (result.ok && result.summary) {
+            setNotice(result.summary);
+            applied.push("generated summary");
+          } else {
+            notes.push(`couldn't summarize (${result.error})`);
+          }
           break;
         }
 
         if (action.kind === "generateResponse") {
-          // Placeholder - would call /api/generate-response
-          applied.push("generated reply (API coming soon)");
+          const result = await generateResponse(messages, users);
+          if (result.ok && result.response) {
+            setNotice(result.response);
+            applied.push("generated reply");
+          } else {
+            notes.push(`couldn't generate reply (${result.error})`);
+          }
           break;
         }
 
         if (action.kind === "suggestReplies") {
-          // Placeholder - would call /api/suggest-replies
-          applied.push("suggested 3 replies (API coming soon)");
+          const result = await suggestReplies(messages, users);
+          if (result.ok && result.replies) {
+            const repliesText = result.replies.map((r, i) => `${i + 1}. "${r}"`).join("\n");
+            setNotice(repliesText);
+            applied.push("suggested 3 replies");
+          } else {
+            notes.push(`couldn't suggest replies (${result.error})`);
+          }
           break;
         }
 
