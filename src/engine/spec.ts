@@ -105,10 +105,60 @@ export const SlotsSchema = z.object({
 
 export type Slots = z.infer<typeof SlotsSchema>;
 
+// ---------------------------------------------------------------------------
+// Escape hatches — unbounded styling/behavior for requests the token registry
+// doesn't anticipate ("cloud-shaped bubbles", "confetti pop on receive").
+// These are intentionally validated only for SHAPE, not content:
+//   - customCSS/customCSSText render as React style objects / a <style> tag,
+//     which can't execute script — worst case is ugly or broken CSS.
+//   - customEffects are JS source compiled with `new Function` and run in a
+//     try/catch against a handed-in container node. A broken or hostile
+//     effect can misbehave inside the chat UI, but can't do anything a
+//     browser tab couldn't already do to itself. Accepted tradeoff for a
+//     personal project — see conversation: user explicitly waived this.
+// ---------------------------------------------------------------------------
+
+// Zones a custom style block can attach to.
+export const CUSTOM_CSS_ZONES = ["bubbleOutgoing", "bubbleIncoming", "background", "header"] as const;
+export type CustomCssZone = (typeof CUSTOM_CSS_ZONES)[number];
+
+const cssPropsSchema = z.record(z.string()).default({});
+
+export const CustomCssSchema = z
+  .object({
+    bubbleOutgoing: cssPropsSchema,
+    bubbleIncoming: cssPropsSchema,
+    background: cssPropsSchema,
+    header: cssPropsSchema,
+  })
+  .partial()
+  .default({});
+
+// Events a custom effect can bind to.
+export const CUSTOM_EFFECT_EVENTS = ["onMessageReceived", "onMessageSent", "onReaction"] as const;
+export type CustomEffectEvent = (typeof CUSTOM_EFFECT_EVENTS)[number];
+
+export const CustomEffectsSchema = z
+  .object({
+    onMessageReceived: z.string().max(4000).nullable(),
+    onMessageSent: z.string().max(4000).nullable(),
+    onReaction: z.string().max(4000).nullable(),
+  })
+  .partial()
+  .default({});
+
+export type CustomCss = z.infer<typeof CustomCssSchema>;
+export type CustomEffects = z.infer<typeof CustomEffectsSchema>;
+
 export const SpecSchema = z.object({
   version: z.literal(1),
   theme: ThemeSchema,
   slots: SlotsSchema,
+  // Raw CSS text injected in a <style> tag — the only way to express
+  // @keyframes/animations, which inline style objects can't carry.
+  customCSSText: z.string().max(4000).default(""),
+  customCSS: CustomCssSchema,
+  customEffects: CustomEffectsSchema,
 });
 
 export type Spec = z.infer<typeof SpecSchema>;
@@ -149,6 +199,9 @@ export const DEFAULT_SPEC: Spec = {
     composerActions: [],
     headerActions: [],
   },
+  customCSSText: "",
+  customCSS: {},
+  customEffects: {},
 };
 
 export type ValidateResult = { ok: true; spec: Spec } | { ok: false; error: string };

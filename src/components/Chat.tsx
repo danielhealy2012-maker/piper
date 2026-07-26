@@ -4,6 +4,7 @@ import type { ChatMessage } from "../lib/types";
 import type { DisplayUser } from "../lib/backend";
 import { renderAction, type TranslationEntry } from "./slots";
 import { bubbleStyle, fontStack, isDarkWallpaper, rowGap, sentimentColor, wallpaperStyle } from "./theme";
+import { runEffect } from "./effects";
 
 const SEND_ICONS: Record<Spec["theme"]["sendButtonStyle"], string> = {
   arrow: "↑",
@@ -38,6 +39,7 @@ export function Chat({ spec, messages, viewerId, users, translations, pinnedMess
   const metaTextClass = dark ? "text-white/60" : "text-black/40";
   const headerBorderClass = dark ? "border-white/10" : "border-black/10";
   const bottomRef = useRef<HTMLDivElement>(null);
+  const effectLayerRef = useRef<HTMLDivElement>(null);
   // Until the user renames the chat themselves, show whoever they're actually
   // talking to rather than the seed placeholder.
   const title =
@@ -47,14 +49,48 @@ export function Chat({ spec, messages, viewerId, users, translations, pinnedMess
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // Fire custom effects (model-generated JS) when a message shows up, keyed
+  // off id so a refetch of the same messages doesn't re-trigger anything.
+  const seenIdsRef = useRef<Set<string>>(new Set());
+  const seenReactionsRef = useRef<Map<string, number>>(new Map());
+  useEffect(() => {
+    const seenIds = seenIdsRef.current;
+    const seenReactions = seenReactionsRef.current;
+    const isFirstRun = seenIds.size === 0;
+    for (const message of messages) {
+      if (!seenIds.has(message.id)) {
+        seenIds.add(message.id);
+        if (!isFirstRun) {
+          const outgoing = message.authorId === viewerId;
+          runEffect(
+            outgoing ? spec.customEffects.onMessageSent : spec.customEffects.onMessageReceived,
+            effectLayerRef.current,
+          );
+        }
+      }
+      const reactionCount = message.reactions?.length ?? 0;
+      const prevCount = seenReactions.get(message.id) ?? 0;
+      if (reactionCount > prevCount && !isFirstRun) {
+        runEffect(spec.customEffects.onReaction, effectLayerRef.current);
+      }
+      seenReactions.set(message.id, reactionCount);
+    }
+  }, [messages, spec.customEffects, viewerId]);
+
   return (
     <div
-      className="mx-auto flex h-[640px] w-full max-w-md flex-col overflow-hidden rounded-[28px] border border-black/10 bg-white shadow-xl"
+      className="relative mx-auto flex h-[640px] w-full max-w-md flex-col overflow-hidden rounded-[28px] border border-black/10 bg-white shadow-xl"
       style={{ fontFamily: fontStack(theme.fontFamily) }}
     >
+      {spec.customCSSText ? <style>{spec.customCSSText}</style> : null}
+      {/* Effects render into this layer, positioned over the whole chat, so a
+          generated confetti/particle effect isn't clipped by the message list's
+          overflow-y-auto. Effects are responsible for cleaning up after themselves. */}
+      <div ref={effectLayerRef} className="pointer-events-none absolute inset-0 z-10 overflow-hidden" />
+
       <header
         className={`flex items-center gap-2 border-b px-4 py-3 ${headerTextClass} ${headerBorderClass}`}
-        style={dark ? { background: "#1c1c1e" } : undefined}
+        style={{ ...(dark ? { background: "#1c1c1e" } : undefined), ...(spec.customCSS.header ?? {}) }}
       >
         <div
           className="flex h-9 w-9 items-center justify-center rounded-full text-xs font-semibold text-white"
@@ -73,7 +109,7 @@ export function Chat({ spec, messages, viewerId, users, translations, pinnedMess
 
       <div
         className="flex flex-1 flex-col overflow-y-auto px-3 py-3"
-        style={{ ...wallpaperStyle(theme), rowGap: rowGap(theme.density) }}
+        style={{ ...wallpaperStyle(theme), rowGap: rowGap(theme.density), ...(spec.customCSS.background ?? {}) }}
       >
         {pinnedMessageIds && pinnedMessageIds.size > 0 ? (
           <div className="mb-2 rounded-lg border-l-4 border-blue-400 bg-blue-50 px-3 py-2">
@@ -116,6 +152,7 @@ export function Chat({ spec, messages, viewerId, users, translations, pinnedMess
                   style={{
                     ...bubbleStyle(theme, outgoing),
                     borderLeft: tint ? `3px solid ${tint}` : undefined,
+                    ...((outgoing ? spec.customCSS.bubbleOutgoing : spec.customCSS.bubbleIncoming) ?? {}),
                   }}
                 >
                   {translated ?? message.text}
