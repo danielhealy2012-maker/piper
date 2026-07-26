@@ -163,7 +163,7 @@ function MultiplayerWorkspace({
     return createSupabaseBackend(conversationId, userId);
   }, [conversationId, userId]);
   const [copied, setCopied] = useState(false);
-  const inviteUrl = `${window.location.origin}/?invite=${inviteCode}`;
+  const inviteUrl = `${window.location.origin}/join/${inviteCode}`;
 
   return (
     <Workspace
