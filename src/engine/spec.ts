@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  BUBBLE_BORDER_STYLES,
   CORNER_STYLES,
   DENSITIES,
   FONT_FAMILIES,
@@ -37,6 +38,9 @@ export const ThemeSchema = z.object({
   wallpaperPattern: z.enum(WALLPAPER_PATTERNS),
   patternOpacity: z.number().min(0).max(1),
   bubbleTail: z.boolean(),
+  bubbleBorderStyle: z.enum(BUBBLE_BORDER_STYLES),
+  bubbleBorderWidth: z.number().min(0).max(4),
+  bubbleBorderColor: hex(),
   sentimentTint: z.boolean(),
   showAvatars: z.boolean(),
   showTimestamps: z.boolean(),
@@ -133,6 +137,9 @@ export const DEFAULT_SPEC: Spec = {
     wallpaperPattern: "none",
     patternOpacity: 0.15,
     bubbleTail: false,
+    bubbleBorderStyle: "none",
+    bubbleBorderWidth: 0,
+    bubbleBorderColor: "#111111",
     sentimentTint: false,
     showAvatars: true,
     showTimestamps: true,

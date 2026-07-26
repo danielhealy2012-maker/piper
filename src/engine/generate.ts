@@ -613,7 +613,7 @@ export function buildSystemPrompt(): string {
     ...slotLines,
     "",
     "The full spec shape is:",
-    '{"version":1,"theme":{...all 17 tokens...},"slots":{"messageActions":[],"composerActions":[],"headerActions":[]}}',
+    '{"version":1,"theme":{...all 20 tokens...},"slots":{"messageActions":[],"composerActions":[],"headerActions":[]}}',
     "",
     "Start from the current spec the user provides, apply the instruction, and keep everything else unchanged.",
     "Return ONLY the full updated spec as raw JSON. No code, no markdown, no commentary.",

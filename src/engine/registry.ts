@@ -34,6 +34,7 @@ export const WALLPAPER_IMAGES = [
 export const WALLPAPER_PATTERNS = ["none", "dots", "grid", "stripes", "checks", "crosshatch"] as const;
 export const CORNER_STYLES = ["tight", "soft", "round", "pill"] as const;
 export const SEND_BUTTON_STYLES = ["arrow", "plane", "heart", "dot"] as const;
+export const BUBBLE_BORDER_STYLES = ["none", "solid", "dashed", "dotted"] as const;
 
 export type FontFamily = (typeof FONT_FAMILIES)[number];
 export type Density = (typeof DENSITIES)[number];
@@ -42,6 +43,7 @@ export type WallpaperImage = (typeof WALLPAPER_IMAGES)[number];
 export type WallpaperPattern = (typeof WALLPAPER_PATTERNS)[number];
 export type CornerStyle = (typeof CORNER_STYLES)[number];
 export type SendButtonStyle = (typeof SEND_BUTTON_STYLES)[number];
+export type BubbleBorderStyle = (typeof BUBBLE_BORDER_STYLES)[number];
 
 type ThemeTokenDescriptor =
   | { kind: "text"; label: string; maxLength: number }
@@ -102,6 +104,14 @@ export const THEME_TOKENS: Record<string, ThemeTokenDescriptor> = {
     max: 1,
   },
   bubbleTail: { kind: "boolean", label: "Little tails on bubbles" },
+  bubbleBorderStyle: { kind: "enum", label: "Bubble border style", values: BUBBLE_BORDER_STYLES },
+  bubbleBorderWidth: {
+    kind: "number",
+    label: "Bubble border thickness in pixels",
+    min: 0,
+    max: 4,
+  },
+  bubbleBorderColor: { kind: "color", label: "Bubble border color" },
   sentimentTint: { kind: "boolean", label: "Tint incoming messages by mood" },
   showAvatars: { kind: "boolean", label: "Show avatars" },
   showTimestamps: { kind: "boolean", label: "Show timestamps" },

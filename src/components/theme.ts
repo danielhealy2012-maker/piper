@@ -279,5 +279,11 @@ export function bubbleStyle(theme: Theme, outgoing: boolean): CSSProperties {
     overflowWrap: "break-word",
     whiteSpace: "normal",
   };
+
+  // Add border if configured
+  if (theme.bubbleBorderStyle !== "none" && theme.bubbleBorderWidth > 0) {
+    style.border = `${theme.bubbleBorderWidth}px ${theme.bubbleBorderStyle} ${theme.bubbleBorderColor}`;
+  }
+
   return style;
 }
