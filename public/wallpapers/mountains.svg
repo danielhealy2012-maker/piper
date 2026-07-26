@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 600" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2b3a67" />
+      <stop offset="45%" stop-color="#8e5a7c" />
+      <stop offset="75%" stop-color="#e58f65" />
+      <stop offset="100%" stop-color="#f6c28b" />
+    </linearGradient>
+    <linearGradient id="far" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#6d5b85" />
+      <stop offset="100%" stop-color="#4b4066" />
+    </linearGradient>
+    <linearGradient id="mid" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#3f3557" />
+      <stop offset="100%" stop-color="#2b2440" />
+    </linearGradient>
+    <linearGradient id="near" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#221d33" />
+      <stop offset="100%" stop-color="#15121f" />
+    </linearGradient>
+  </defs>
+  <rect width="400" height="600" fill="url(#sky)" />
+  <circle cx="288" cy="352" r="34" fill="#ffd9a0" opacity="0.95" />
+  <g opacity="0.5" fill="#ffffff">
+    <circle cx="52" cy="66" r="1.6" />
+    <circle cx="128" cy="42" r="1.2" />
+    <circle cx="196" cy="88" r="1.5" />
+    <circle cx="268" cy="54" r="1.1" />
+    <circle cx="340" cy="96" r="1.4" />
+    <circle cx="88" cy="140" r="1.1" />
+    <circle cx="308" cy="168" r="1.2" />
+  </g>
+  <path d="M0 470 L92 350 L150 412 L228 300 L318 404 L400 336 L400 600 L0 600 Z" fill="url(#far)" />
+  <path d="M0 600 L0 500 L74 414 L164 508 L248 420 L330 496 L400 438 L400 600 Z" fill="url(#mid)" />
+  <path d="M0 600 L0 546 L96 480 L192 552 L286 496 L400 560 L400 600 Z" fill="url(#near)" />
+</svg>

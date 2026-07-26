@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Piper — chat you can reshape by talking to it</title>
+    <!-- The "rounded" fontFamily token has no cross-platform system font, so we
+         load one real webfont to make that theme option actually visible. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Quicksand:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div id="root"></div>
+    <!-- Capture invite code BEFORE React or Supabase redirect it away -->
+    <script>
+      (function() {
+        const params = new URLSearchParams(window.location.search);
+        const inviteCode = params.get("invite");
+        if (inviteCode) {
+          console.log("[invite-earlyboot] captured code:", inviteCode);
+          localStorage.setItem("piper_invite_code", inviteCode);
+        }
+      })();
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 600" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="dusk" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1a1035" />
+      <stop offset="50%" stop-color="#3b1b52" />
+      <stop offset="100%" stop-color="#12203f" />
+    </linearGradient>
+    <filter id="blur1"><feGaussianBlur stdDeviation="6" /></filter>
+    <filter id="blur2"><feGaussianBlur stdDeviation="14" /></filter>
+  </defs>
+  <rect width="400" height="600" fill="url(#dusk)" />
+  <g filter="url(#blur2)" opacity="0.5">
+    <circle cx="70" cy="120" r="46" fill="#ffb36b" />
+    <circle cx="316" cy="228" r="58" fill="#ff6f9c" />
+    <circle cx="150" cy="430" r="52" fill="#6fd8ff" />
+    <circle cx="340" cy="520" r="44" fill="#c58bff" />
+  </g>
+  <g filter="url(#blur1)" opacity="0.55">
+    <circle cx="196" cy="96" r="22" fill="#ffd9a0" />
+    <circle cx="88" cy="268" r="18" fill="#ff9ec4" />
+    <circle cx="272" cy="366" r="26" fill="#8be0ff" />
+    <circle cx="44" cy="470" r="20" fill="#ffc57a" />
+    <circle cx="222" cy="548" r="24" fill="#b79bff" />
+    <circle cx="368" cy="382" r="16" fill="#ffe1a8" />
+  </g>
+  <g opacity="0.85">
+    <circle cx="128" cy="182" r="4" fill="#fff3d6" />
+    <circle cx="300" cy="140" r="3" fill="#ffe9f2" />
+    <circle cx="60" cy="356" r="3.5" fill="#dff4ff" />
+    <circle cx="248" cy="272" r="3" fill="#fff3d6" />
+    <circle cx="352" cy="452" r="3.5" fill="#f2e4ff" />
+    <circle cx="172" cy="500" r="3" fill="#dff4ff" />
+  </g>
+</svg>

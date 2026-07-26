@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 600" preserveAspectRatio="xMidYMid slice">
+  <rect width="400" height="600" fill="#fffaf3" />
+  <g opacity="0.9">
+    <rect x="34" y="48" width="12" height="7" rx="2" fill="#ff3b30" transform="rotate(24 40 51)" />
+    <rect x="128" y="92" width="12" height="7" rx="2" fill="#0a84ff" transform="rotate(-38 134 95)" />
+    <rect x="248" y="42" width="12" height="7" rx="2" fill="#ffcc00" transform="rotate(52 254 45)" />
+    <rect x="330" y="118" width="12" height="7" rx="2" fill="#34c759" transform="rotate(-16 336 121)" />
+    <rect x="72" y="170" width="12" height="7" rx="2" fill="#af52de" transform="rotate(41 78 173)" />
+    <rect x="196" y="152" width="12" height="7" rx="2" fill="#ff2d55" transform="rotate(-62 202 155)" />
+    <rect x="300" y="216" width="12" height="7" rx="2" fill="#30b0c7" transform="rotate(18 306 219)" />
+    <rect x="42" y="268" width="12" height="7" rx="2" fill="#ff9500" transform="rotate(-30 48 271)" />
+    <rect x="154" y="252" width="12" height="7" rx="2" fill="#5e5ce6" transform="rotate(66 160 255)" />
+    <rect x="262" y="308" width="12" height="7" rx="2" fill="#34c759" transform="rotate(-48 268 311)" />
+    <rect x="352" y="286" width="12" height="7" rx="2" fill="#ff3b30" transform="rotate(12 358 289)" />
+    <rect x="96" y="356" width="12" height="7" rx="2" fill="#0a84ff" transform="rotate(-24 102 359)" />
+    <rect x="214" y="392" width="12" height="7" rx="2" fill="#ffcc00" transform="rotate(58 220 395)" />
+    <rect x="318" y="404" width="12" height="7" rx="2" fill="#af52de" transform="rotate(-52 324 407)" />
+    <rect x="52" y="452" width="12" height="7" rx="2" fill="#30b0c7" transform="rotate(34 58 455)" />
+    <rect x="168" y="486" width="12" height="7" rx="2" fill="#ff2d55" transform="rotate(-14 174 489)" />
+    <rect x="278" y="504" width="12" height="7" rx="2" fill="#ff9500" transform="rotate(46 284 507)" />
+    <rect x="366" y="470" width="12" height="7" rx="2" fill="#5e5ce6" transform="rotate(-36 372 473)" />
+    <rect x="112" y="548" width="12" height="7" rx="2" fill="#34c759" transform="rotate(22 118 551)" />
+    <rect x="232" y="566" width="12" height="7" rx="2" fill="#0a84ff" transform="rotate(-58 238 569)" />
+    <circle cx="88" cy="122" r="4" fill="#ffcc00" /><circle cx="286" cy="164" r="4" fill="#ff3b30" />
+    <circle cx="140" cy="318" r="4" fill="#34c759" /><circle cx="342" cy="352" r="4" fill="#0a84ff" />
+    <circle cx="66" cy="392" r="4" fill="#ff2d55" /><circle cx="200" cy="446" r="4" fill="#af52de" />
+    <circle cx="308" cy="562" r="4" fill="#ffcc00" /><circle cx="24" cy="524" r="4" fill="#30b0c7" />
+  </g>
+</svg>
