@@ -218,7 +218,7 @@ export function buildRouterPrompt(): string {
     '  - {"kind":"translateMessage","messageId":<id>,"targetLanguage":"French"} — any language.',
     '  - {"kind":"editMessage","messageId":<id>,"newText":<string>} — you write the new text. Examples: "fix my typo", "make it formal".',
     '  - {"kind":"deleteMessage","messageId":<id>} — remove a single message. Examples: "delete my last message", "remove the one that says hello".',
-    '  - {"kind":"deleteAllMessagesBy","authorId":<id>} — remove ALL messages from one person. Examples: "delete all my messages", "remove all of Sam\'s messages", "delete everything I wrote".',
+    '  - {"kind":"deleteAllMessagesBy","authorId":<id>} — remove ALL messages from one person. Examples: "delete all my messages", "delete all my texts", "remove all of Sam\'s messages", "delete everything I wrote", "nuke all my messages".',
     '  - {"kind":"reactToMessage","messageId":<id>,"emoji":"👍"} — add a reaction.',
     '  - {"kind":"deleteReaction","messageId":<id>,"emoji":"👍"} — remove one emoji.',
     '  - {"kind":"deleteAllReactions","messageId":<id>} — remove all reactions from a message.',

@@ -589,7 +589,7 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
                       key={i}
                       type="button"
                       onClick={() => {
-                        setInstruction(reply);
+                        void handleSend(reply);
                         setQueryResult(null);
                       }}
                       className="text-left text-sm rounded px-2 py-1.5 bg-white border border-blue-200 text-blue-900 hover:bg-blue-100 transition"

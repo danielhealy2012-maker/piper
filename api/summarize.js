@@ -27,10 +27,11 @@ export default async function handler(req, res) {
     const response = await anthropic.messages.create({
       model: MODEL,
       max_tokens: 500,
+      system: "You are analyzing a chat transcript between two users. Summarize the conversation objectively in 1-2 sentences, capturing the main topics and any key decisions or outcomes. Do not respond as if you are part of the conversation.",
       messages: [
         {
           role: "user",
-          content: `Summarize this conversation in 1-2 sentences, capturing the main topic and any key decisions or outcomes:\n\n${conversationText}`,
+          content: `Summarize this conversation:\n\n${conversationText}`,
         },
       ],
     });
