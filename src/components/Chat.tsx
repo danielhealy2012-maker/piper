@@ -20,11 +20,13 @@ export interface ChatProps {
   // Translation state lives in App (so both the button and the action router can
   // drive it) and flows down here read-only.
   translations: Record<string, TranslationEntry>;
+  pinnedMessageIds?: Set<string>;
+  starredMessageIds?: Set<string>;
   onSend: (text: string) => void;
   onTranslate: (messageId: string, target: string) => void;
 }
 
-export function Chat({ spec, messages, viewerId, users, translations, onSend, onTranslate }: ChatProps) {
+export function Chat({ spec, messages, viewerId, users, translations, pinnedMessageIds, starredMessageIds, onSend, onTranslate }: ChatProps) {
   const [draft, setDraft] = useState("");
   const theme = spec.theme;
   // `users` is empty on first render while the backend loads (and a brand-new
@@ -73,6 +75,22 @@ export function Chat({ spec, messages, viewerId, users, translations, onSend, on
         className="flex flex-1 flex-col overflow-y-auto px-3 py-3"
         style={{ ...wallpaperStyle(theme), rowGap: rowGap(theme.density) }}
       >
+        {pinnedMessageIds && pinnedMessageIds.size > 0 ? (
+          <div className="mb-2 rounded-lg border-l-4 border-blue-400 bg-blue-50 px-3 py-2">
+            <div className="text-xs font-semibold text-blue-700 mb-1">📌 Pinned</div>
+            {messages
+              .filter((m) => pinnedMessageIds.has(m.id))
+              .map((message) => {
+                const author = users.find((u) => u.id === message.authorId);
+                return (
+                  <div key={message.id} className="text-xs text-blue-900 mb-1 last:mb-0">
+                    <strong>{author?.name}:</strong> {message.text.slice(0, 50)}
+                    {message.text.length > 50 ? "…" : ""}
+                  </div>
+                );
+              })}
+          </div>
+        ) : null}
         {messages.map((message) => {
           const outgoing = message.authorId === viewerId;
           const author = users.find((u) => u.id === message.authorId);
@@ -112,15 +130,18 @@ export function Chat({ spec, messages, viewerId, users, translations, onSend, on
                     <div className="italic">&ldquo;{message.text}&rdquo;</div>
                   </div>
                 ) : null}
-                {message.reactions && message.reactions.length > 0 ? (
+                {(message.reactions && message.reactions.length > 0) || (starredMessageIds && starredMessageIds.has(message.id)) ? (
                   <div
-                    className={`mt-1 flex gap-0.5 rounded-full bg-white/85 px-1.5 py-0.5 text-xs shadow-sm ${
+                    className={`mt-1 flex items-center gap-0.5 rounded-full bg-white/85 px-1.5 py-0.5 text-xs shadow-sm ${
                       outgoing ? "self-end" : "self-start"
                     }`}
                   >
-                    {message.reactions.map((emoji, i) => (
+                    {message.reactions && message.reactions.map((emoji, i) => (
                       <span key={`${emoji}-${i}`}>{emoji}</span>
                     ))}
+                    {starredMessageIds && starredMessageIds.has(message.id) ? (
+                      <span title="starred">⭐</span>
+                    ) : null}
                   </div>
                 ) : null}
                 <div className="mt-0.5 flex items-center gap-1.5">

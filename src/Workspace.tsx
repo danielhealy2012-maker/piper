@@ -54,6 +54,9 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
   const [log, setLog] = useState<LogEntry[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
   const [undoStack, setUndoStack] = useState<UndoOp[]>([]);
+  const [queryResult, setQueryResult] = useState<{ type: "summary" | "reply" | "suggestions"; content: string | string[] } | null>(null);
+  const [pinnedMessageIds, setPinnedMessageIds] = useState<Set<string>>(new Set());
+  const [starredMessageIds, setStarredMessageIds] = useState<Set<string>>(new Set());
   const logEndRef = useRef<HTMLDivElement>(null);
 
   const refresh = useCallback(async () => {
@@ -338,19 +341,51 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
               break;
             }
             case "pinMessage":
-              // Placeholder: needs backend/DB support
+              setPinnedMessageIds((prev) => new Set([...prev, action.messageId]));
+              inverses.push({
+                label: "unpin",
+                run: () => setPinnedMessageIds((prev) => {
+                  const next = new Set(prev);
+                  next.delete(action.messageId);
+                  return next;
+                }),
+              });
               applied.push(`pinned "${message.text.slice(0, 20)}..."`);
               break;
             case "unpinMessage":
-              // Placeholder: needs backend/DB support
+              setPinnedMessageIds((prev) => {
+                const next = new Set(prev);
+                next.delete(action.messageId);
+                return next;
+              });
+              inverses.push({
+                label: "repin",
+                run: () => setPinnedMessageIds((prev) => new Set([...prev, action.messageId])),
+              });
               applied.push("unpinned");
               break;
             case "starMessage":
-              // Placeholder: needs backend/DB support
+              setStarredMessageIds((prev) => new Set([...prev, action.messageId]));
+              inverses.push({
+                label: "unstar",
+                run: () => setStarredMessageIds((prev) => {
+                  const next = new Set(prev);
+                  next.delete(action.messageId);
+                  return next;
+                }),
+              });
               applied.push("starred");
               break;
             case "unstarMessage":
-              // Placeholder: needs backend/DB support
+              setStarredMessageIds((prev) => {
+                const next = new Set(prev);
+                next.delete(action.messageId);
+                return next;
+              });
+              inverses.push({
+                label: "restar",
+                run: () => setStarredMessageIds((prev) => new Set([...prev, action.messageId])),
+              });
               applied.push("unstarred");
               break;
           }
@@ -368,7 +403,7 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
         if (action.kind === "summarizeConversation") {
           const result = await summarizeConversation(messages, users);
           if (result.ok && result.summary) {
-            setNotice(result.summary);
+            setQueryResult({ type: "summary", content: result.summary });
             applied.push("generated summary");
           } else {
             notes.push(`couldn't summarize (${result.error})`);
@@ -379,7 +414,7 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
         if (action.kind === "generateResponse") {
           const result = await generateResponse(messages, users);
           if (result.ok && result.response) {
-            setNotice(result.response);
+            setQueryResult({ type: "reply", content: result.response });
             applied.push("generated reply");
           } else {
             notes.push(`couldn't generate reply (${result.error})`);
@@ -390,8 +425,7 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
         if (action.kind === "suggestReplies") {
           const result = await suggestReplies(messages, users);
           if (result.ok && result.replies) {
-            const repliesText = result.replies.map((r, i) => `${i + 1}. "${r}"`).join("\n");
-            setNotice(repliesText);
+            setQueryResult({ type: "suggestions", content: result.replies });
             applied.push("suggested 3 replies");
           } else {
             notes.push(`couldn't suggest replies (${result.error})`);
@@ -506,6 +540,76 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
           </div>
         ) : null}
 
+        {queryResult ? (
+          <div className="flex flex-col gap-2 rounded-xl border border-blue-300 bg-blue-50 px-3 py-2">
+            {queryResult.type === "summary" && (
+              <div>
+                <div className="text-xs font-medium text-blue-700 mb-1">Summary</div>
+                <div className="text-sm text-blue-900">{queryResult.content}</div>
+                <button
+                  type="button"
+                  onClick={() => setQueryResult(null)}
+                  className="mt-2 text-xs text-blue-600 hover:text-blue-800"
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
+            {queryResult.type === "reply" && (
+              <div>
+                <div className="text-xs font-medium text-blue-700 mb-1">Draft Reply</div>
+                <div className="text-sm text-blue-900 mb-2">{queryResult.content}</div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInstruction(queryResult.content as string);
+                      setQueryResult(null);
+                    }}
+                    className="text-xs rounded px-2 py-1 bg-blue-200 text-blue-900 hover:bg-blue-300"
+                  >
+                    Use this
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQueryResult(null)}
+                    className="text-xs text-blue-600 hover:text-blue-800"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            )}
+            {queryResult.type === "suggestions" && (
+              <div>
+                <div className="text-xs font-medium text-blue-700 mb-2">Suggested Replies</div>
+                <div className="flex flex-col gap-2">
+                  {(queryResult.content as string[]).map((reply, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => {
+                        setInstruction(reply);
+                        setQueryResult(null);
+                      }}
+                      className="text-left text-sm rounded px-2 py-1.5 bg-white border border-blue-200 text-blue-900 hover:bg-blue-100 transition"
+                    >
+                      {reply}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setQueryResult(null)}
+                  className="mt-2 text-xs text-blue-600 hover:text-blue-800"
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
+          </div>
+        ) : null}
+
         <div className="flex flex-wrap gap-1.5">
           {EXAMPLE_CHIPS.map((chip) => (
             <button
@@ -562,6 +666,8 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
             viewerId={backend.viewerId}
             users={users}
             translations={translations}
+            pinnedMessageIds={pinnedMessageIds}
+            starredMessageIds={starredMessageIds}
             onSend={(t) => void handleSend(t)}
             onTranslate={(id, target) => void handleTranslate(id, target)}
           />
