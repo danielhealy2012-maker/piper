@@ -11,12 +11,15 @@ import type { ChatMessage } from "./lib/types";
 const EXAMPLE_CHIPS = [
   "make my bubbles green with tails",
   "blue to purple gradient background",
-  "mountain background",
   "translate the last message to Japanese",
   "react to the last message with 🔥",
   "delete my last message",
-  "add a poll and scheduled send",
-  "reset",
+  "delete all reactions on the last message",
+  "delete all of Sam's messages",
+  "star the one that says grab dinner",
+  "summarize this conversation",
+  "randomize my theme",
+  "reset theme",
 ];
 
 interface LogEntry {

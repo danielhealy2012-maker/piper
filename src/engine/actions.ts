@@ -11,12 +11,13 @@ import type { DisplayUser } from "../lib/backend";
 // ---------------------------------------------------------------------------
 
 export const MessageActionSchema = z.discriminatedUnion("kind", [
+  // Read/translate
   z.object({
     kind: z.literal("translateMessage"),
     messageId: z.string(),
-    // Free-text so translation is language-agnostic ("French", "Japanese", ...).
     targetLanguage: z.string().min(1).max(40),
   }),
+  // Write: edit, delete
   z.object({
     kind: z.literal("editMessage"),
     messageId: z.string(),
@@ -27,25 +28,74 @@ export const MessageActionSchema = z.discriminatedUnion("kind", [
     messageId: z.string(),
   }),
   z.object({
+    kind: z.literal("deleteAllMessagesBy"),
+    authorId: z.string(),
+  }),
+  // Reactions
+  z.object({
     kind: z.literal("reactToMessage"),
     messageId: z.string(),
     emoji: z.string().min(1).max(8),
+  }),
+  z.object({
+    kind: z.literal("deleteReaction"),
+    messageId: z.string(),
+    emoji: z.string().min(1).max(8),
+  }),
+  z.object({
+    kind: z.literal("deleteAllReactions"),
+    messageId: z.string(),
+  }),
+  // Annotations: pin, star
+  z.object({
+    kind: z.literal("pinMessage"),
+    messageId: z.string(),
+  }),
+  z.object({
+    kind: z.literal("unpinMessage"),
+    messageId: z.string(),
+  }),
+  z.object({
+    kind: z.literal("starMessage"),
+    messageId: z.string(),
+  }),
+  z.object({
+    kind: z.literal("unstarMessage"),
+    messageId: z.string(),
+  }),
+  // Queries/generations (trigger API calls)
+  z.object({
+    kind: z.literal("summarizeConversation"),
+  }),
+  z.object({
+    kind: z.literal("generateResponse"),
+  }),
+  z.object({
+    kind: z.literal("suggestReplies"),
+  }),
+  // Filters
+  z.object({
+    kind: z.literal("filterByAuthor"),
+    authorId: z.string().nullable(),
   }),
 ]);
 
 export type MessageAction = z.infer<typeof MessageActionSchema>;
 
 // The router's whole output: a plan the app executes.
-// - messageActions: content operations to apply.
-// - themeInstruction: the appearance part of the request, delegated verbatim to
-//   the existing theme engine (generateSpec) so we reuse all its validated
-//   token logic rather than re-teaching the router 24 tokens of color math.
-// - reply: one human sentence — a summary when things are done, or a "can't do
-//   that because… try…" when they aren't.
+// - messageActions: content operations (edit, delete, react, etc).
+// - themeInstruction: appearance request, delegated to generateSpec.
+// - themeMutation: explicit theme operations (reset, randomize).
+// - conversationTitle: if set, rename the conversation.
+// - clearConversation: if true, delete all messages.
+// - reply: one human sentence describing the outcome.
 // - feasible: false only when nothing at all could be mapped.
 export const PlanSchema = z.object({
   messageActions: z.array(MessageActionSchema).default([]),
   themeInstruction: z.string().nullable().default(null),
+  themeMutation: z.enum(["reset", "randomize"]).nullable().default(null),
+  conversationTitle: z.string().nullable().default(null),
+  clearConversation: z.boolean().default(false),
   reply: z.string().default(""),
   feasible: z.boolean().default(true),
 });
@@ -80,12 +130,59 @@ export function applyReaction(messages: ChatMessage[], id: string, emoji: string
   return messages.map((m) => {
     if (m.id !== id) return m;
     const reactions = m.reactions ?? [];
-    // Toggle: same emoji twice removes it, so "react with 👍" is reversible.
     const next = reactions.includes(emoji)
       ? reactions.filter((e) => e !== emoji)
       : [...reactions, emoji];
     return { ...m, reactions: next };
   });
+}
+
+export function applyDeleteReaction(messages: ChatMessage[], id: string, emoji: string): ChatMessage[] {
+  return messages.map((m) => (m.id === id ? { ...m, reactions: (m.reactions ?? []).filter((e) => e !== emoji) } : m));
+}
+
+export function applyDeleteAllReactions(messages: ChatMessage[], id: string): ChatMessage[] {
+  return messages.map((m) => (m.id === id ? { ...m, reactions: [] } : m));
+}
+
+export function applyDeleteAllMessagesBy(messages: ChatMessage[], authorId: string): ChatMessage[] {
+  return messages.filter((m) => m.authorId !== authorId);
+}
+
+// Pin, star, filter: these are UI-state operations, not message-list mutations.
+// Keeping them here as no-ops since they're handled in Workspace state.
+export function applyPinMessage(messages: ChatMessage[], id: string): ChatMessage[] {
+  return messages;
+}
+
+export function applyUnpinMessage(messages: ChatMessage[], id: string): ChatMessage[] {
+  return messages;
+}
+
+export function applyStarMessage(messages: ChatMessage[], id: string): ChatMessage[] {
+  return messages;
+}
+
+export function applyUnstarMessage(messages: ChatMessage[], id: string): ChatMessage[] {
+  return messages;
+}
+
+export function applyFilterByAuthor(messages: ChatMessage[], authorId: string | null): ChatMessage[] {
+  return messages;
+}
+
+// Query/generation actions (summarize, generate, suggest) are no-ops here
+// but trigger API calls in the orchestrator.
+export function applySummarizeConversation(messages: ChatMessage[]): ChatMessage[] {
+  return messages;
+}
+
+export function applyGenerateResponse(messages: ChatMessage[]): ChatMessage[] {
+  return messages;
+}
+
+export function applySuggestReplies(messages: ChatMessage[]): ChatMessage[] {
+  return messages;
 }
 
 export function messageExists(messages: ChatMessage[], id: string): boolean {
@@ -101,27 +198,48 @@ export function messageExists(messages: ChatMessage[], id: string): boolean {
 
 export function buildRouterPrompt(): string {
   return [
-    "You are the planner for Piper, an iMessage-style chat demo. You read a user instruction plus the current chat state and output a JSON plan describing exactly what to do — or explain why it can't be done.",
+    "You are the planner for Piper, an iMessage-style chat app. You read a user instruction, the current chat state, and output a JSON plan — or explain why it can't be done.",
     "",
-    "You can do two kinds of things:",
+    "THREE kinds of changes you can make:",
     "",
-    "1. APPEARANCE / UI changes — bubble colors, text colors, fonts, backgrounds (solid colors, gradients, illustrated scenes: mountains/waves/city/forest/desert/aurora/confetti/bokeh, and patterns), density, tails, avatars, timestamps, the send-button icon, and adding/removing buttons (translate, poll, voice note, GIF, reactions, read receipts, search, mute, video call, etc.). Do NOT compute these yourself. Put the appearance part of the request, in plain words, into `themeInstruction`. If the request has no appearance part, set themeInstruction to null.",
+    "1. APPEARANCE — theme/UI via `themeInstruction` (a plain-language request, e.g. 'green bubbles', 'dark mode'). Or explicit theme mutations: `themeMutation: 'reset'` or `'randomize'`. Leave both null if the request has no appearance part.",
     "",
-    "2. MESSAGE operations on the conversation shown below, via `messageActions`:",
-    '   - {"kind":"translateMessage","messageId":<id>,"targetLanguage":<language name, e.g. "French">} — translate one message (any language). Examples: "translate to French", "translate to Japanese", "translate to English" (also recognizes "text" and "message" as synonyms).',
-    '   - {"kind":"editMessage","messageId":<id>,"newText":<string>} — replace a message\'s text. If the user asks to rephrase/reword/make it formal/etc., YOU write the new wording and put it in newText. Examples: "edit my last message to hello", "fix the typo in my first text to \'hi\'".',
-    '   - {"kind":"deleteMessage","messageId":<id>} — remove a message. Examples: "delete my last message", "remove my first text", "erase that".',
-    '   - {"kind":"reactToMessage","messageId":<id>,"emoji":<single emoji>} — add an emoji reaction. Examples: "react to the last message with 👍", "add a 🔥 to Sam\'s message".',
+    "2. CONVERSATION — `conversationTitle` to rename, or `clearConversation: true` to delete all messages.",
     "",
-    "Resolve message references yourself using the list below — by quote (\"the one that says grab dinner\"), by position (\"the last message\", \"my first message\", \"Sam's last text\"), or by author (\"Sam's message\"). \"Text\", \"message\", \"msg\" are interchangeable — treat them the same. Use the exact id from the list. NEVER invent an id. If you can't identify which message is meant, add no action for it and say so in `reply`.",
+    "3. MESSAGE OPERATIONS via `messageActions` — an array of one or more:",
+    "   Read: translateMessage",
+    "   Write: editMessage, deleteMessage, deleteAllMessagesBy",
+    "   Reactions: reactToMessage, deleteReaction, deleteAllReactions",
+    "   Annotations: pinMessage, unpinMessage, starMessage, unstarMessage",
+    "   Queries: summarizeConversation, generateResponse, suggestReplies",
+    "   Filters: filterByAuthor",
     "",
-    "Output ONLY a JSON object of this shape:",
-    '{"messageActions":[...],"themeInstruction":<string|null>,"reply":<string>,"feasible":<boolean>}',
+    "MESSAGE ACTION DETAILS:",
+    '  - {"kind":"translateMessage","messageId":<id>,"targetLanguage":"French"} — any language.',
+    '  - {"kind":"editMessage","messageId":<id>,"newText":<string>} — you write the new text. Examples: "fix my typo", "make it formal".',
+    '  - {"kind":"deleteMessage","messageId":<id>} — remove any message.',
+    '  - {"kind":"deleteAllMessagesBy","authorId":<id>} — remove all messages from one person.',
+    '  - {"kind":"reactToMessage","messageId":<id>,"emoji":"👍"} — add a reaction.',
+    '  - {"kind":"deleteReaction","messageId":<id>,"emoji":"👍"} — remove one emoji.',
+    '  - {"kind":"deleteAllReactions","messageId":<id>} — remove all reactions from a message.',
+    '  - {"kind":"pinMessage","messageId":<id>} — pin to top.',
+    '  - {"kind":"unpinMessage","messageId":<id>}',
+    '  - {"kind":"starMessage","messageId":<id>} — bookmark.',
+    '  - {"kind":"unstarMessage","messageId":<id>}',
+    '  - {"kind":"summarizeConversation"} — generate a summary.',
+    '  - {"kind":"generateResponse"} — AI draft a reply.',
+    '  - {"kind":"suggestReplies"} — 3 suggested replies.',
+    '  - {"kind":"filterByAuthor","authorId":"<id or null>"} — show only one person\'s messages (or null to clear).',
     "",
-    "`reply`: one friendly sentence. If everything asked is doable, briefly say what you're doing. If some or all of it is NOT possible in Piper (e.g. play a sound, make a real phone call, send to a real person, generate a photograph, attach a file), do the parts you can and, for the parts you can't, explain plainly why and suggest the closest thing Piper CAN do.",
-    "`feasible`: set false ONLY when you produced no messageActions AND themeInstruction is null (nothing at all could be done).",
+    "Resolve message references yourself using the list below. Match by quote, position (\\\"last message\\\", \\\"first message\\\", \\\"second message\\\"), or author. Use the exact id from the list. NEVER invent an id. If you can't identify which message, add no action and say so in `reply`.",
     "",
-    "Return raw JSON only — no markdown, no commentary outside the JSON.",
+    "Output ONLY a JSON object:",
+    '{"messageActions":[...],"themeInstruction":<string|null>,"themeMutation":<"reset"|"randomize"|null>,"conversationTitle":<string|null>,"clearConversation":<boolean>,"reply":<string>,"feasible":<boolean>}',
+    "",
+    "`reply`: one sentence. If done, say what you did. If not, explain why and suggest alternatives.",
+    "`feasible`: false only if you produced nothing at all.",
+    "",
+    "Return raw JSON only — no markdown.",
   ].join("\n");
 }
 
