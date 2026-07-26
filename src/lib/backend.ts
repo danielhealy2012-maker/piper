@@ -1,4 +1,5 @@
 import {
+  clearConversationMessages,
   deleteMessage,
   editMessage,
   fetchMessages,
@@ -9,6 +10,7 @@ import {
   sendMessage,
   subscribeConversation,
   toggleReaction,
+  updateConversationTitle,
 } from "./db";
 import { requireSupabase } from "./supabase";
 import { formatTime, type ChatMessage } from "./types";
@@ -43,6 +45,8 @@ export interface ChatBackend {
   unremove(id: string): Promise<void>;
   /** Toggles the emoji, so calling twice is its own inverse. */
   react(id: string, emoji: string): Promise<void>;
+  updateTitle(title: string): Promise<void>;
+  clearMessages(): Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -136,6 +140,13 @@ export function createLocalBackend(viewerId: string): ChatBackend {
       });
       notifyLocal();
     },
+    async updateTitle(_title) {
+      // Local demo doesn't have conversation titles
+    },
+    async clearMessages() {
+      localState.messages = [];
+      notifyLocal();
+    },
   };
 }
 
@@ -200,5 +211,7 @@ export function createSupabaseBackend(conversationId: string, userId: string): C
       await sb.from("messages").update({ deleted_at: null }).eq("id", id);
     },
     react: (id, emoji) => toggleReaction(id, userId, emoji),
+    updateTitle: (title) => updateConversationTitle(conversationId, title),
+    clearMessages: () => clearConversationMessages(conversationId),
   };
 }

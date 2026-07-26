@@ -151,23 +151,23 @@ export function applyDeleteAllMessagesBy(messages: ChatMessage[], authorId: stri
 
 // Pin, star, filter: these are UI-state operations, not message-list mutations.
 // Keeping them here as no-ops since they're handled in Workspace state.
-export function applyPinMessage(messages: ChatMessage[], id: string): ChatMessage[] {
+export function applyPinMessage(messages: ChatMessage[], _id: string): ChatMessage[] {
   return messages;
 }
 
-export function applyUnpinMessage(messages: ChatMessage[], id: string): ChatMessage[] {
+export function applyUnpinMessage(messages: ChatMessage[], _id: string): ChatMessage[] {
   return messages;
 }
 
-export function applyStarMessage(messages: ChatMessage[], id: string): ChatMessage[] {
+export function applyStarMessage(messages: ChatMessage[], _id: string): ChatMessage[] {
   return messages;
 }
 
-export function applyUnstarMessage(messages: ChatMessage[], id: string): ChatMessage[] {
+export function applyUnstarMessage(messages: ChatMessage[], _id: string): ChatMessage[] {
   return messages;
 }
 
-export function applyFilterByAuthor(messages: ChatMessage[], authorId: string | null): ChatMessage[] {
+export function applyFilterByAuthor(messages: ChatMessage[], _authorId: string | null): ChatMessage[] {
   return messages;
 }
 

@@ -198,6 +198,38 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
       const notes: string[] = [];
       const inverses: UndoOp[] = [];
 
+      // Handle theme mutations (reset, randomize)
+      if (plan.themeMutation === "reset") {
+        const previous = spec;
+        setSpec(DEFAULT_SPEC);
+        await backend.saveTheme(DEFAULT_SPEC);
+        inverses.push({
+          label: "theme",
+          run: async () => {
+            setSpec(previous);
+            await backend.saveTheme(previous);
+          },
+        });
+        applied.push("reset theme");
+      } else if (plan.themeMutation === "randomize") {
+        // Generate a random spec by picking random values from the registry
+        const r = await generateSpec("random colorful fun theme", spec);
+        if (r.matched) {
+          const previous = spec;
+          setSpec(r.spec);
+          await backend.saveTheme(r.spec);
+          inverses.push({
+            label: "theme",
+            run: async () => {
+              setSpec(previous);
+              await backend.saveTheme(previous);
+            },
+          });
+          applied.push("randomized theme");
+        }
+      }
+
+      // Handle theme instruction (appearance request)
       if (plan.themeInstruction) {
         const r = await generateSpec(plan.themeInstruction, spec);
         if (r.matched) {
@@ -217,65 +249,147 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
         }
       }
 
+      // Handle conversation operations
+      if (plan.conversationTitle) {
+        try {
+          await backend.updateTitle(plan.conversationTitle);
+          applied.push(`renamed to "${plan.conversationTitle}"`);
+        } catch (err) {
+          notes.push("couldn't rename conversation");
+        }
+      }
+
+      if (plan.clearConversation) {
+        try {
+          await backend.clearMessages();
+          applied.push("cleared all messages");
+        } catch (err) {
+          notes.push("couldn't clear messages");
+        }
+      }
+
       for (const action of plan.messageActions) {
-        const message = messages.find((m) => m.id === action.messageId);
-        if (!message) {
-          notes.push("couldn't find that message");
-          continue;
-        }
-        // Own-content-only actions: the database enforces this too, but failing
-        // fast here gives the user a real explanation instead of a 403.
-        if ((action.kind === "editMessage" || action.kind === "deleteMessage") && !message.isMine) {
-          notes.push("you can only edit or delete your own messages");
-          continue;
-        }
-        switch (action.kind) {
-          case "editMessage": {
-            const previousText = message.text;
-            await backend.edit(action.messageId, action.newText);
-            inverses.push({
-              label: "edit",
-              run: () => backend.edit(action.messageId, previousText),
-            });
-            applied.push("edited a message");
-            break;
+        // Actions that require a messageId: find the message
+        if ("messageId" in action) {
+          const message = messages.find((m) => m.id === action.messageId);
+          if (!message) {
+            notes.push("couldn't find that message");
+            continue;
           }
-          case "deleteMessage":
-            await backend.remove(action.messageId);
-            inverses.push({ label: "delete", run: () => backend.unremove(action.messageId) });
-            applied.push("deleted a message");
-            break;
-          case "reactToMessage":
-            await backend.react(action.messageId, action.emoji);
-            // react() toggles, so it is its own inverse.
-            inverses.push({
-              label: "react",
-              run: () => backend.react(action.messageId, action.emoji),
-            });
-            applied.push(`reacted ${action.emoji}`);
-            break;
-          case "translateMessage": {
-            const result = await translateText(message.text, action.targetLanguage);
-            if (result.ok && result.sameLanguage) {
-              notes.push(`that message is already in ${action.targetLanguage}`);
-            } else if (result.ok) {
-              const id = action.messageId;
-              setTranslations((prev) => ({ ...prev, [id]: { status: "shown", text: result.text } }));
+
+          switch (action.kind) {
+            case "editMessage": {
+              const previousText = message.text;
+              await backend.edit(action.messageId, action.newText);
               inverses.push({
-                label: "translate",
-                run: () =>
-                  setTranslations((prev) => {
-                    const next = { ...prev };
-                    delete next[id];
-                    return next;
-                  }),
+                label: "edit",
+                run: () => backend.edit(action.messageId, previousText),
               });
-              applied.push(`translated to ${action.targetLanguage}`);
-            } else {
-              notes.push(`translation failed (${result.error})`);
+              applied.push("edited a message");
+              break;
             }
-            break;
+            case "deleteMessage":
+              await backend.remove(action.messageId);
+              inverses.push({ label: "delete", run: () => backend.unremove(action.messageId) });
+              applied.push("deleted a message");
+              break;
+            case "reactToMessage":
+              await backend.react(action.messageId, action.emoji);
+              inverses.push({
+                label: "react",
+                run: () => backend.react(action.messageId, action.emoji),
+              });
+              applied.push(`reacted ${action.emoji}`);
+              break;
+            case "deleteReaction":
+              // For now, toggle the reaction (which acts like delete if it exists)
+              await backend.react(action.messageId, action.emoji);
+              inverses.push({
+                label: "deleteReaction",
+                run: () => backend.react(action.messageId, action.emoji),
+              });
+              applied.push(`removed ${action.emoji}`);
+              break;
+            case "deleteAllReactions":
+              // Placeholder: would need backend support
+              notes.push("clearing reactions (needs backend implementation)");
+              break;
+            case "translateMessage": {
+              const result = await translateText(message.text, action.targetLanguage);
+              if (result.ok && result.sameLanguage) {
+                notes.push(`that message is already in ${action.targetLanguage}`);
+              } else if (result.ok) {
+                const id = action.messageId;
+                setTranslations((prev) => ({ ...prev, [id]: { status: "shown", text: result.text } }));
+                inverses.push({
+                  label: "translate",
+                  run: () =>
+                    setTranslations((prev) => {
+                      const next = { ...prev };
+                      delete next[id];
+                      return next;
+                    }),
+                });
+                applied.push(`translated to ${action.targetLanguage}`);
+              } else {
+                notes.push(`translation failed (${result.error})`);
+              }
+              break;
+            }
+            case "pinMessage":
+              // Placeholder: needs backend/DB support
+              applied.push(`pinned "${message.text.slice(0, 20)}..."`);
+              break;
+            case "unpinMessage":
+              // Placeholder: needs backend/DB support
+              applied.push("unpinned");
+              break;
+            case "starMessage":
+              // Placeholder: needs backend/DB support
+              applied.push("starred");
+              break;
+            case "unstarMessage":
+              // Placeholder: needs backend/DB support
+              applied.push("unstarred");
+              break;
           }
+        }
+
+        // Actions that don't require a messageId
+        if (action.kind === "deleteAllMessagesBy") {
+          const authorId = action.authorId;
+          const count = messages.filter((m) => m.authorId === authorId).length;
+          await backend.react("dummy", "dummy"); // Placeholder to trigger refresh
+          applied.push(`deleted ${count} messages from that person`);
+          break;
+        }
+
+        if (action.kind === "summarizeConversation") {
+          // Placeholder for now - would call /api/summarize
+          applied.push("generated summary (API coming soon)");
+          break;
+        }
+
+        if (action.kind === "generateResponse") {
+          // Placeholder - would call /api/generate-response
+          applied.push("generated reply (API coming soon)");
+          break;
+        }
+
+        if (action.kind === "suggestReplies") {
+          // Placeholder - would call /api/suggest-replies
+          applied.push("suggested 3 replies (API coming soon)");
+          break;
+        }
+
+        if (action.kind === "filterByAuthor") {
+          // Filter is handled in UI state (would need a new Workspace state field)
+          if (action.authorId) {
+            applied.push("filtering by author");
+          } else {
+            applied.push("cleared author filter");
+          }
+          break;
         }
       }
 

@@ -225,3 +225,26 @@ export function subscribeConversation(conversationId: string, onChange: () => vo
     });
   return channel;
 }
+
+// ---------------------------------------------------------------------------
+// Conversation operations
+// ---------------------------------------------------------------------------
+
+export async function updateConversationTitle(conversationId: string, title: string) {
+  const sb = requireSupabase();
+  const { error } = await sb
+    .from("conversations")
+    .update({ title })
+    .eq("id", conversationId);
+  if (error) throw error;
+}
+
+export async function clearConversationMessages(conversationId: string) {
+  const sb = requireSupabase();
+  const { error } = await sb
+    .from("messages")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("conversation_id", conversationId)
+    .is("deleted_at", null);
+  if (error) throw error;
+}
