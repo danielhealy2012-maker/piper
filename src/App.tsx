@@ -5,6 +5,7 @@ import { SignIn } from "./components/SignIn";
 import { createLocalBackend, createSupabaseBackend } from "./lib/backend";
 import { getOrCreateConversation, joinByInviteCode, signOut } from "./lib/db";
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
+import { getBuildInfo, type BuildInfo } from "./lib/build-info";
 import type { Conversation } from "./lib/types";
 
 /** `?invite=<code>` (or `/join/<code>`) lets a friend join your conversation.
@@ -164,6 +165,7 @@ function MultiplayerWorkspace({
   }, [conversationId, userId]);
   const [copied, setCopied] = useState(false);
   const [otherUser, setOtherUser] = useState<{ id: string; name: string } | null>(null);
+  const [buildInfo, setBuildInfo] = useState<BuildInfo | null>(null);
   const inviteUrl = `${window.location.origin}/join/${inviteCode}`;
 
   // Fetch conversation members to display the other person's name
@@ -181,13 +183,21 @@ function MultiplayerWorkspace({
     })();
   }, [backend, userId]);
 
+  // Load build info
+  useEffect(() => {
+    void (async () => {
+      const info = await getBuildInfo();
+      setBuildInfo(info);
+    })();
+  }, []);
+
   return (
     <Workspace
       backend={backend}
       headerSlot={
         <div className="flex flex-col gap-2 rounded-xl border border-black/10 bg-white px-3 py-2 text-xs">
           <div className="flex items-center justify-between gap-2">
-            <div className="truncate text-black/60">
+            <div className="truncate text-black/60 flex-1">
               {otherUser ? (
                 <>
                   <span className="font-medium">{otherUser.name}</span>
@@ -222,8 +232,12 @@ function MultiplayerWorkspace({
           >
             {copied ? "✓ invite link copied" : "Copy invite link for a friend"}
           </button>
-          <div className="mt-1 break-all rounded bg-black/5 px-2 py-1 text-xs text-black/70">
+          <div className="rounded bg-black/5 px-2 py-1 text-xs text-black/40 overflow-hidden max-h-0 opacity-0" title="Invite link (hidden, copy via button)">
             {inviteUrl}
+          </div>
+          <div className="text-xs text-black/50 border-t border-black/5 pt-2">
+            <div className="font-medium text-black/60">Last Deploy</div>
+            <div>{buildInfo?.date ?? "Loading..."}</div>
           </div>
         </div>
       }
