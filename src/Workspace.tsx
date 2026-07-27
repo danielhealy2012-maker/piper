@@ -57,6 +57,10 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
   const [queryResult, setQueryResult] = useState<{ type: "summary" | "reply" | "suggestions"; content: string | string[] } | null>(null);
   const [pinnedMessageIds, setPinnedMessageIds] = useState<Set<string>>(new Set());
   const [starredMessageIds, setStarredMessageIds] = useState<Set<string>>(new Set());
+  // Set when the router asked a clarifying question instead of guessing — the
+  // NEXT instruction the user types is treated as the answer and merged with
+  // this original instruction rather than run standalone.
+  const [pendingClarification, setPendingClarification] = useState<string | null>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
 
   const refresh = useCallback(async () => {
@@ -162,21 +166,32 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
     if (!trimmed || busy) return;
     setBusy(true);
     try {
+      // If we're mid-clarification, this instruction is the answer — merge it
+      // with the original ask rather than running it standalone, and always
+      // go through the router (the fast path can't resolve an ambiguity).
+      const answeringClarification = pendingClarification !== null;
+      const effectiveInstruction = answeringClarification
+        ? `${pendingClarification} (clarification from user: ${trimmed})`
+        : trimmed;
+      if (answeringClarification) setPendingClarification(null);
+
       // 1. Free keyword fast-path (personal theme only).
-      const kw = keywordOnly(trimmed, spec);
-      if (kw) {
-        await applyTheme(kw.spec, spec);
-        logResult(trimmed, kw.summary, true);
-        setNotice(null);
-        setInstruction("");
-        return;
+      if (!answeringClarification) {
+        const kw = keywordOnly(trimmed, spec);
+        if (kw) {
+          await applyTheme(kw.spec, spec);
+          logResult(trimmed, kw.summary, true);
+          setNotice(null);
+          setInstruction("");
+          return;
+        }
       }
 
       // 2. Router.
-      const routed = await routeInstruction(trimmed, messages, users, backend.viewerId);
+      const routed = await routeInstruction(effectiveInstruction, messages, users, backend.viewerId);
 
       if (routed.status === "unavailable") {
-        const r = await generateSpec(trimmed, spec);
+        const r = await generateSpec(effectiveInstruction, spec);
         if (r.matched) {
           await applyTheme(r.spec, spec);
           logResult(trimmed, r.summary, true);
@@ -192,6 +207,17 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
         const msg = "I couldn't turn that into a valid change — try rephrasing it.";
         logResult(trimmed, msg, false);
         setNotice(msg);
+        setInstruction("");
+        return;
+      }
+
+      // 2.5. Router asked a clarifying question instead of guessing — surface
+      // it and wait for the next instruction to be the answer.
+      if (routed.plan.needsClarification) {
+        const question = routed.plan.reply || "Could you clarify what you mean?";
+        setPendingClarification(effectiveInstruction);
+        logResult(trimmed, question, false);
+        setNotice(question);
         setInstruction("");
         return;
       }
@@ -393,10 +419,18 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
 
         // Actions that don't require a messageId
         if (action.kind === "deleteAllMessagesBy") {
-          const authorId = action.authorId;
-          const count = messages.filter((m) => m.authorId === authorId).length;
-          await backend.react("dummy", "dummy"); // Placeholder to trigger refresh
-          applied.push(`deleted ${count} messages from that person`);
+          const deletedIds = await backend.removeAllBy(action.authorId);
+          if (deletedIds.length > 0) {
+            inverses.push({
+              label: "deleteAllBy",
+              run: async () => {
+                for (const id of deletedIds) await backend.unremove(id);
+              },
+            });
+            applied.push(`deleted ${deletedIds.length} message${deletedIds.length === 1 ? "" : "s"}`);
+          } else {
+            notes.push("that person has no messages to delete");
+          }
           break;
         }
 
@@ -513,8 +547,10 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
           <input
             value={instruction}
             onChange={(e) => setInstruction(e.target.value)}
-            placeholder="Tell Piper what to do…"
-            className="flex-1 rounded-full border border-black/15 bg-white px-4 py-2 text-sm outline-none focus:border-black/30"
+            placeholder={pendingClarification ? "Answer the question above…" : "Tell Piper what to do…"}
+            className={`flex-1 rounded-full border bg-white px-4 py-2 text-sm outline-none focus:border-black/30 ${
+              pendingClarification ? "border-sky-300" : "border-black/15"
+            }`}
           />
           <button
             type="submit"
@@ -525,7 +561,23 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
           </button>
         </form>
 
-        {notice ? (
+        {pendingClarification ? (
+          <div className="flex items-start gap-2 rounded-xl border border-sky-300 bg-sky-50 px-3 py-2 text-sm text-sky-800">
+            <span className="mt-0.5">❓</span>
+            <span className="flex-1">{notice}</span>
+            <button
+              type="button"
+              onClick={() => {
+                setPendingClarification(null);
+                setNotice(null);
+              }}
+              className="text-sky-500 hover:text-sky-700"
+              aria-label="Cancel"
+            >
+              ✕
+            </button>
+          </div>
+        ) : notice ? (
           <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
             <span className="mt-0.5">⚠</span>
             <span className="flex-1">{notice}</span>

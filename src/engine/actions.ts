@@ -98,6 +98,10 @@ export const PlanSchema = z.object({
   clearConversation: z.boolean().default(false),
   reply: z.string().default(""),
   feasible: z.boolean().default(true),
+  // True only for genuine ambiguity (multiple plausible interpretations, not
+  // just "the model isn't 100% sure"). When true, everything else is empty/
+  // null/false and `reply` holds the clarifying question instead of a result.
+  needsClarification: z.boolean().default(false),
 });
 
 export type Plan = z.infer<typeof PlanSchema>;
@@ -231,13 +235,15 @@ export function buildRouterPrompt(): string {
     '  - {"kind":"suggestReplies"} — 3 suggested replies.',
     '  - {"kind":"filterByAuthor","authorId":"<id or null>"} — show only one person\'s messages (or null to clear).',
     "",
-    "Resolve message references yourself using the list below. Match by quote, position (\\\"last message\\\", \\\"first message\\\", \\\"second message\\\"), or author. Use the exact id from the list. NEVER invent an id. If you can't identify which message, add no action and say so in `reply`.",
+    "Resolve message references yourself using the list below. Match by quote, position (\\\"last message\\\", \\\"first message\\\", \\\"second message\\\"), or author. Use the exact id from the list. NEVER invent an id.",
+    "",
+    "WHEN TO ASK VS WHEN TO JUST DO IT: if you can make a reasonably confident interpretation, DO IT — don't ask for confirmation on things that are merely underspecified but have an obvious best reading (e.g. \"delete my last message\" when there's exactly one obvious last message from the user is NOT ambiguous). Only set `needsClarification: true` for GENUINE ambiguity — where two or more clearly different interpretations are both plausible and picking wrong would do the wrong thing (e.g. \"delete the one about oranges\" when three different messages mention oranges; \"make it look nicer\" with no concrete direction at all; an instruction that could equally mean a message action or a theme change with very different results). When you set needsClarification true: leave messageActions empty, themeInstruction/themeMutation/conversationTitle null, clearConversation false, and put a SPECIFIC question in `reply` (list the actual options where possible, e.g. quote the 3 candidate messages) so the user can answer directly. Never ask a vague \"what do you mean?\" — always ask a concrete, answerable question.",
     "",
     "Output ONLY a JSON object:",
-    '{"messageActions":[...],"themeInstruction":<string|null>,"themeMutation":<"reset"|"randomize"|null>,"conversationTitle":<string|null>,"clearConversation":<boolean>,"reply":<string>,"feasible":<boolean>}',
+    '{"messageActions":[...],"themeInstruction":<string|null>,"themeMutation":<"reset"|"randomize"|null>,"conversationTitle":<string|null>,"clearConversation":<boolean>,"reply":<string>,"feasible":<boolean>,"needsClarification":<boolean>}',
     "",
-    "`reply`: one sentence. If done, say what you did. If not, explain why and suggest alternatives.",
-    "`feasible`: false only if you produced nothing at all. Visual effects, animations, and on-event triggers (confetti, flashes, pulsing, glows, etc.) are ALWAYS achievable via themeInstruction — never mark these infeasible or claim Piper can't do them.",
+    "`reply`: one sentence. If done, say what you did. If not feasible, explain why and suggest alternatives. If needsClarification, ask the specific question.",
+    "`feasible`: false only if you produced nothing at all AND aren't asking for clarification. Visual effects, animations, and on-event triggers (confetti, flashes, pulsing, glows, etc.) are ALWAYS achievable via themeInstruction — never mark these infeasible or claim Piper can't do them.",
     "",
     "Return raw JSON only — no markdown.",
   ].join("\n");

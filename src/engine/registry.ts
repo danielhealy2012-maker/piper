@@ -132,7 +132,6 @@ export const SLOTS = {
   composerActions: {
     label: "Buttons in the message composer",
     allow: [
-      "SendSuggestions",
       "ToneShifter",
       "ClearButton",
       "VoiceNote",
@@ -154,7 +153,10 @@ export const SLOT_NAMES = Object.keys(SLOTS) as SlotName[];
 // Component prop schemas. Every component not listed here explicitly takes no props.
 export const COMPONENT_PROPS_SCHEMAS = {
   TranslateButton: z.object({
-    target: z.enum(["es", "fr", "de", "ja", "auto"]).default("auto"),
+    // Free text, matching the router's translateMessage action — any language
+    // name (e.g. "Chinese", "Japanese"), or the sentinel "auto" (non-English
+    // -> English, English -> Spanish).
+    target: z.string().min(1).max(40).default("auto"),
   }),
   ReactionBar: z.object({
     emojis: z.array(z.string()).max(6).default(["❤️", "👍", "😂", "❗"]),

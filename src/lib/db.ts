@@ -149,6 +149,28 @@ export async function deleteMessage(messageId: string) {
   if (error) throw error;
 }
 
+/** Bulk soft-delete every message from one author in a conversation. Returns
+ *  the ids actually deleted, so the caller can build an undo (unremove each). */
+export async function deleteAllMessagesByAuthor(conversationId: string, authorId: string): Promise<string[]> {
+  const sb = requireSupabase();
+  const { data: rows, error: selectError } = await sb
+    .from("messages")
+    .select("id")
+    .eq("conversation_id", conversationId)
+    .eq("author_id", authorId)
+    .is("deleted_at", null);
+  if (selectError) throw selectError;
+  const ids = (rows ?? []).map((r) => r.id as string);
+  if (ids.length === 0) return [];
+
+  const { error } = await sb
+    .from("messages")
+    .update({ deleted_at: new Date().toISOString() })
+    .in("id", ids);
+  if (error) throw error;
+  return ids;
+}
+
 /** Shared: both participants see reactions. Toggles on repeat. */
 export async function toggleReaction(messageId: string, userId: string, emoji: string) {
   const sb = requireSupabase();

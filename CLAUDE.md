@@ -103,14 +103,16 @@ across the You/Sam viewer toggle.
   closest bundled scene or a gradient. `theme.ts`'s `DARK_SCENES` marks which ones need light
   chrome; `isDarkWallpaper()` also luminance-averages gradient stops and custom colors.
 - **3 slots**: `messageActions` (TranslateButton, SummarizeButton, CopyButton, PinButton,
-  ReactionBar, ReadReceipt), `composerActions` (SendSuggestions, ToneShifter, ClearButton,
+  ReactionBar, ReadReceipt), `composerActions` (ToneShifter, ClearButton,
   VoiceNote, GifPicker, Poll, ScheduledSend, AIReplyDraft), `headerActions` (SearchBox,
   MuteToggle, ThemeBadge, VideoCallButton).
 - A handful of components carry real prop schemas (TranslateButton, ReactionBar, Poll,
   ToneShifter, ThemeBadge) — everything else takes no props. This is deliberate: the point is
   proving prop validation works on genuine prop-bearing components, not model-friendly divs.
-- `TranslateButton` is the one component that makes a network call (see below). Summarize,
-  SendSuggestions, ToneShifter and AIReplyDraft are still canned/local demos by choice.
+- `TranslateButton` is the one component that makes a network call (see below). Real AI-backed
+  suggested replies live in the router's `suggestReplies`/`generateResponse` actions (see
+  Query & Analysis), not as a composer component. Summarize, ToneShifter and the legacy
+  AIReplyDraft composer button are still canned/local demos by choice.
 
 ## Messages are backend-driven
 

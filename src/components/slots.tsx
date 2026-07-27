@@ -124,19 +124,6 @@ function ReadReceipt() {
   return <span className={btnClass("text-black/50")}>✓✓ Read</span>;
 }
 
-function SendSuggestions({ setDraft }: { setDraft: (v: string) => void }) {
-  const suggestions = ["Sounds good!", "On my way", "Let me check"];
-  return (
-    <span className="flex flex-wrap gap-1">
-      {suggestions.map((s) => (
-        <button key={s} type="button" className={btnClass()} onClick={() => setDraft(s)}>
-          {s}
-        </button>
-      ))}
-    </span>
-  );
-}
-
 function ToneShifter({ props, draft, setDraft }: { props: { tones: string[] }; draft: string; setDraft: (v: string) => void }) {
   return (
     <span className="flex flex-wrap gap-1">
@@ -268,8 +255,6 @@ export function renderAction(action: Action, index: number, ctx: SlotContext): R
       return <ReactionBar key={key} props={props as { emojis: string[] }} />;
     case "ReadReceipt":
       return ctx.outgoing ? <ReadReceipt key={key} /> : null;
-    case "SendSuggestions":
-      return <SendSuggestions key={key} setDraft={ctx.setDraft} />;
     case "ToneShifter":
       return (
         <ToneShifter

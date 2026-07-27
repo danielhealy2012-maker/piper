@@ -1,5 +1,6 @@
 import {
   clearConversationMessages,
+  deleteAllMessagesByAuthor,
   deleteMessage,
   editMessage,
   fetchMessages,
@@ -43,6 +44,8 @@ export interface ChatBackend {
   remove(id: string): Promise<void>;
   /** Undo support: soft-deletes are reversible. */
   unremove(id: string): Promise<void>;
+  /** Bulk delete: returns the ids actually removed, so callers can undo. */
+  removeAllBy(authorId: string): Promise<string[]>;
   /** Toggles the emoji, so calling twice is its own inverse. */
   react(id: string, emoji: string): Promise<void>;
   updateTitle(title: string): Promise<void>;
@@ -126,6 +129,13 @@ export function createLocalBackend(viewerId: string): ChatBackend {
         a.time === b.time ? 0 : a.time < b.time ? -1 : 1,
       );
       notifyLocal();
+    },
+    async removeAllBy(authorId) {
+      const targets = localState.messages.filter((m) => m.authorId === authorId);
+      localState.deleted.push(...targets);
+      localState.messages = localState.messages.filter((m) => m.authorId !== authorId);
+      notifyLocal();
+      return targets.map((m) => m.id);
     },
     async react(id, emoji) {
       localState.messages = localState.messages.map((m) => {
@@ -213,5 +223,6 @@ export function createSupabaseBackend(conversationId: string, userId: string): C
     react: (id, emoji) => toggleReaction(id, userId, emoji),
     updateTitle: (title) => updateConversationTitle(conversationId, title),
     clearMessages: () => clearConversationMessages(conversationId),
+    removeAllBy: (authorId) => deleteAllMessagesByAuthor(conversationId, authorId),
   };
 }
