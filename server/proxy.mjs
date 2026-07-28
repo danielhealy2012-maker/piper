@@ -77,6 +77,9 @@ const server = http.createServer(async (req, res) => {
       const body = JSON.parse(await readBody(req));
       const { system, instruction, spec, model } = body;
       const chosenModel = model || MODEL;
+      // No prefill: this endpoint accepts a model override (escalation to
+      // claude-opus-4-8), and not every model supports assistant-prefill —
+      // one that doesn't 400s. extractJson() finds the JSON regardless.
       const response = await client.messages.create({
         model: chosenModel,
         max_tokens: 1500,
@@ -86,15 +89,12 @@ const server = http.createServer(async (req, res) => {
             role: "user",
             content: `Current spec:\n${JSON.stringify(spec)}\n\nInstruction: ${instruction}\n\nReturn ONLY the {"spec":...,"summary":...,"limitation":...,"backgroundImagePrompt":...} JSON object described in the system prompt.`,
           },
-          { role: "assistant", content: "{" },
         ],
       });
-      const raw =
-        "{" +
-        response.content
-          .filter((block) => block.type === "text")
-          .map((block) => block.text)
-          .join("");
+      const raw = response.content
+        .filter((block) => block.type === "text")
+        .map((block) => block.text)
+        .join("");
       const usage = response.usage;
       console.log(
         `[piper] model=${chosenModel} input_tokens=${usage?.input_tokens ?? "?"} output_tokens=${usage?.output_tokens ?? "?"}`,
