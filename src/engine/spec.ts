@@ -29,7 +29,12 @@ const wallpaperUrlSchema = z
   .max(500)
   .refine((v) => v === "" || (v.startsWith("https://") && (!STORAGE_PREFIX || v.startsWith(STORAGE_PREFIX))), {
     message: "wallpaperUrl must be a Supabase Storage public URL",
-  });
+  })
+  // Defaulted, not required: the model is never told this field exists (it's
+  // excluded from THEME_TOKENS on purpose), so its responses legitimately
+  // omit it. Without a default, that omission failed validation on every
+  // single "generated" request and forced an unnecessary escalation retry.
+  .default("");
 
 export const ThemeSchema = z.object({
   chatTitle: z.string().max(40),
