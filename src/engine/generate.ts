@@ -562,7 +562,7 @@ export function residualContentWords(instruction: string): string[] {
 // ---------------------------------------------------------------------------
 
 type ModelResult =
-  | { status: "ok"; spec: Spec }
+  | { status: "ok"; spec: Spec; summary: string | null; limitation: string | null }
   | { status: "invalid"; error: string }
   | { status: "unavailable" };
 
@@ -637,7 +637,13 @@ export function buildSystemPrompt(): string {
     '{"version":1,"theme":{...all 20 tokens...},"slots":{"messageActions":[],"composerActions":[],"headerActions":[]},"customCSSText":"","customCSS":{"bubbleOutgoing":{},"bubbleIncoming":{},"background":{},"header":{}},"customEffects":{"onMessageReceived":null,"onMessageSent":null,"onReaction":null}}',
     "",
     "Start from the current spec the user provides, apply the instruction, and keep everything else unchanged.",
-    "Return ONLY the full updated spec as raw JSON. No code, no markdown, no commentary.",
+    "",
+    "IMPORTANT — you have no way to generate new artwork/photos. `wallpaperImage` is a CLOSED list of 8 hand-drawn scenes (mountains, waves, city, forest, desert, aurora, confetti, bokeh) — nothing else exists, no matter what's asked for (a dog, a specific photo, a logo, etc). If the literal request can't be honored — it names something outside these 8 scenes, or asks for a kind of image Piper can't produce at all — do NOT silently substitute the closest scene and stay quiet about it. Pick the best available approximation (or a plain color/gradient if no scene is even close) AND say so honestly in `limitation`.",
+    "",
+    "Output a JSON OBJECT with exactly these keys — not the bare spec:",
+    '{"spec": {...the full spec, shape above...}, "summary": <short phrase describing what you actually changed, e.g. "set background to a green forest scene">, "limitation": <string|null — null if you fully did what was literally asked; otherwise ONE sentence explaining what you couldn\'t do and what you did instead, e.g. "Piper can\'t generate a picture of a dog — there\'s no image generation, only 8 fixed scenes — so I used the closest available option, a forest, instead.">}',
+    "",
+    "Return ONLY that JSON object. No markdown, no commentary outside the object.",
   ].join("\n");
 }
 
@@ -671,23 +677,43 @@ async function callModel(instruction: string, current: Spec, model?: string): Pr
     return { status: "unavailable" };
   }
   const data = (await res.json()) as { raw: string };
-  let candidate: unknown;
+  let envelope: unknown;
   try {
-    candidate = extractJson(data.raw);
+    envelope = extractJson(data.raw);
   } catch {
     return { status: "invalid", error: "model response was not valid JSON" };
   }
-  const validated = validateSpec(candidate);
+  // Accept either the new {spec, summary, limitation} envelope or a bare
+  // spec object, so an older/escalation-model response that ignores the
+  // envelope instruction still works rather than hard-failing.
+  const candidateSpec =
+    envelope && typeof envelope === "object" && "spec" in envelope
+      ? (envelope as { spec: unknown }).spec
+      : envelope;
+  const validated = validateSpec(candidateSpec);
   if (!validated.ok) {
     return { status: "invalid", error: validated.error };
   }
-  return { status: "ok", spec: enforceLegibility(validated.spec) };
+  const summary =
+    envelope && typeof envelope === "object" && typeof (envelope as { summary?: unknown }).summary === "string"
+      ? (envelope as { summary: string }).summary
+      : null;
+  const limitation =
+    envelope && typeof envelope === "object" && typeof (envelope as { limitation?: unknown }).limitation === "string"
+      ? (envelope as { limitation: string }).limitation
+      : null;
+  return { status: "ok", spec: enforceLegibility(validated.spec), summary, limitation };
 }
 
 export interface GenerateResult {
   spec: Spec;
   summary: string;
   matched: boolean;
+  // Set when the model couldn't literally honor the request and had to
+  // approximate/substitute — e.g. "cartoon dog background" when Piper has no
+  // image generation, only 8 fixed scenes. Surfaced distinctly so a
+  // substitution is never silent.
+  limitation?: string;
 }
 
 // The free, instant fast path in isolation: returns a spec only when the keyword
@@ -741,13 +767,23 @@ export async function generateSpec(
   // and, if that also comes back empty, tell the user plainly rather than
   // reporting a false "updated" when nothing visibly changed.
   if (modelResult.status === "ok" && !specsEqual(modelResult.spec, current)) {
-    return { spec: modelResult.spec, summary: "updated (via Claude)", matched: true };
+    return {
+      spec: modelResult.spec,
+      summary: modelResult.summary ?? "updated (via Claude)",
+      matched: true,
+      limitation: modelResult.limitation ?? undefined,
+    };
   }
 
   if (modelResult.status === "ok" || modelResult.status === "invalid") {
     const escalated = await callModel(trimmed, current, ESCALATION_MODEL);
     if (escalated.status === "ok" && !specsEqual(escalated.spec, current)) {
-      return { spec: escalated.spec, summary: "updated (via Claude, escalated)", matched: true };
+      return {
+        spec: escalated.spec,
+        summary: escalated.summary ?? "updated (via Claude, escalated)",
+        matched: true,
+        limitation: escalated.limitation ?? undefined,
+      };
     }
     const errorText =
       escalated.status === "invalid"

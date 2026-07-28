@@ -18,12 +18,14 @@ export default async function handler(req, res) {
       messages: [
         {
           role: "user",
-          content: `Current spec:\n${JSON.stringify(spec)}\n\nInstruction: ${instruction}\n\nReturn ONLY the full updated spec as raw JSON.`,
+          content: `Current spec:\n${JSON.stringify(spec)}\n\nInstruction: ${instruction}\n\nReturn ONLY the {"spec":...,"summary":...,"limitation":...} JSON object described in the system prompt.`,
         },
+        // Prefill "{" so the reply can only be that JSON object.
+        { role: "assistant", content: "{" },
       ],
     });
     logUsage("generate", chosenModel, response.usage);
-    sendJson(res, 200, { raw: textOf(response), usage: response.usage, model: chosenModel });
+    sendJson(res, 200, { raw: "{" + textOf(response), usage: response.usage, model: chosenModel });
   } catch (err) {
     sendJson(res, 500, { error: errorMessage(err) });
   }

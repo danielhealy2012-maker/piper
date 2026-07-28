@@ -196,8 +196,8 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
         const r = await generateSpec(effectiveInstruction, spec);
         if (r.matched) {
           await applyTheme(r.spec, spec);
-          logResult(trimmed, r.summary, true);
-          setNotice(null);
+          logResult(trimmed, r.limitation ? `${r.summary} — ${r.limitation}` : r.summary, true);
+          setNotice(r.limitation ?? null);
         } else {
           logResult(trimmed, r.summary, false);
           setNotice(r.summary);
@@ -273,6 +273,9 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
             },
           });
           applied.push(r.summary);
+          // A substitution ("asked for a dog, got the closest bundled scene")
+          // must never be silent — surface it distinctly from a normal note.
+          if (r.limitation) notes.push(r.limitation);
         } else {
           notes.push(r.summary);
         }
