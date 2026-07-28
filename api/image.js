@@ -40,6 +40,28 @@ async function getLatestVersionId() {
   return id;
 }
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// `Prefer: wait` on the initial POST only holds the connection for a bounded
+// window — a cold-started model (first real invocation, or one Replicate
+// spun down) can still be "starting"/"processing" when that window closes,
+// which is exactly what happened on the first real request. Poll the
+// prediction's own status URL until it actually finishes rather than trusting
+// the single initial response. Bounded to stay well inside vercel.json's
+// 60s maxDuration for this function.
+async function waitForPrediction(prediction) {
+  let current = prediction;
+  const deadline = Date.now() + 45_000;
+  while (current.status !== "succeeded" && current.status !== "failed" && current.status !== "canceled") {
+    if (Date.now() > deadline) throw new Error("timed out waiting for image generation");
+    await sleep(1200);
+    const res = await fetch(current.urls.get, { headers: { Authorization: `Bearer ${REPLICATE_TOKEN}` } });
+    if (!res.ok) throw new Error(`could not poll prediction status (${res.status})`);
+    current = await res.json();
+  }
+  return current;
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" });
   if (!REPLICATE_TOKEN) return sendJson(res, 503, { error: "no_image_provider_configured" });
@@ -73,7 +95,11 @@ export default async function handler(req, res) {
       headers: {
         Authorization: `Bearer ${REPLICATE_TOKEN}`,
         "Content-Type": "application/json",
-        Prefer: "wait",
+        // Modest explicit wait, not the bare default — leaves most of the
+        // 60s function budget to the polling loop below, which has its own
+        // visibility into status rather than blocking blind inside one
+        // long HTTP call.
+        Prefer: "wait=10",
       },
       body: JSON.stringify({
         version,
@@ -86,10 +112,12 @@ export default async function handler(req, res) {
       const text = await prediction.text();
       return sendJson(res, 502, { error: `image provider error: ${text.slice(0, 200)}` });
     }
-    const predictionData = await prediction.json();
+    const predictionData = await waitForPrediction(await prediction.json());
     const output = Array.isArray(predictionData.output) ? predictionData.output[0] : predictionData.output;
     if (predictionData.status !== "succeeded" || !output) {
-      return sendJson(res, 502, { error: `image generation ${predictionData.status || "failed"}` });
+      return sendJson(res, 502, {
+        error: `image generation ${predictionData.status || "failed"}${predictionData.error ? `: ${predictionData.error}` : ""}`,
+      });
     }
 
     // Re-host: Replicate's own delivery URL isn't guaranteed permanent —
