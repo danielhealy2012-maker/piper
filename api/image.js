@@ -12,12 +12,32 @@ import crypto from "node:crypto";
 import { admin, errorMessage, meter, readJsonBody, requireUser, sendJson } from "./_lib.js";
 
 const REPLICATE_TOKEN = process.env.REPLICATE_API_TOKEN;
-const REPLICATE_MODEL = "black-forest-labs/flux-schnell";
+const REPLICATE_OWNER = "black-forest-labs";
+const REPLICATE_NAME = "flux-schnell";
 const MAX_PROMPT_LENGTH = 400;
 const BUCKET = "backgrounds";
 
 function promptHash(prompt) {
   return crypto.createHash("sha256").update(prompt.trim().toLowerCase()).digest("hex");
+}
+
+// Module-scope cache: survives across warm invocations of the same
+// serverless instance, so most requests skip this lookup entirely. The
+// classic /v1/predictions endpoint needs a specific version hash, not a
+// model name — this resolves "latest" once instead of hardcoding a hash
+// that would silently go stale as the model is updated upstream.
+let cachedVersionId = null;
+async function getLatestVersionId() {
+  if (cachedVersionId) return cachedVersionId;
+  const res = await fetch(`https://api.replicate.com/v1/models/${REPLICATE_OWNER}/${REPLICATE_NAME}`, {
+    headers: { Authorization: `Bearer ${REPLICATE_TOKEN}` },
+  });
+  if (!res.ok) throw new Error(`could not resolve model version (${res.status})`);
+  const data = await res.json();
+  const id = data?.latest_version?.id;
+  if (!id) throw new Error("model has no latest_version");
+  cachedVersionId = id;
+  return id;
 }
 
 export default async function handler(req, res) {
@@ -47,10 +67,7 @@ export default async function handler(req, res) {
 
     if (!(await meter(user, "image", res))) return;
 
-    // The /v1/models/{owner}/{model}/predictions shortcut 404s/adapter-errors
-    // for some models depending on how they're published — the general
-    // /v1/predictions endpoint with `model` in the body is the more reliably
-    // documented path and works the same way for official models like this one.
+    const version = await getLatestVersionId();
     const prediction = await fetch("https://api.replicate.com/v1/predictions", {
       method: "POST",
       headers: {
@@ -59,7 +76,7 @@ export default async function handler(req, res) {
         Prefer: "wait",
       },
       body: JSON.stringify({
-        model: REPLICATE_MODEL,
+        version,
         input: {
           prompt: `${prompt}, flat illustration style, clean simple background, no text, no watermark`,
         },
