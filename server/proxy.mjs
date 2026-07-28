@@ -84,14 +84,17 @@ const server = http.createServer(async (req, res) => {
         messages: [
           {
             role: "user",
-            content: `Current spec:\n${JSON.stringify(spec)}\n\nInstruction: ${instruction}\n\nReturn ONLY the full updated spec as raw JSON.`,
+            content: `Current spec:\n${JSON.stringify(spec)}\n\nInstruction: ${instruction}\n\nReturn ONLY the {"spec":...,"summary":...,"limitation":...,"backgroundImagePrompt":...} JSON object described in the system prompt.`,
           },
+          { role: "assistant", content: "{" },
         ],
       });
-      const raw = response.content
-        .filter((block) => block.type === "text")
-        .map((block) => block.text)
-        .join("");
+      const raw =
+        "{" +
+        response.content
+          .filter((block) => block.type === "text")
+          .map((block) => block.text)
+          .join("");
       const usage = response.usage;
       console.log(
         `[piper] model=${chosenModel} input_tokens=${usage?.input_tokens ?? "?"} output_tokens=${usage?.output_tokens ?? "?"}`,
@@ -184,6 +187,17 @@ const server = http.createServer(async (req, res) => {
     } catch (err) {
       sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
     }
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/api/image") {
+    // Real image generation (api/image.js) needs Supabase Storage + the
+    // generated_backgrounds cache table, which this bare Node proxy doesn't
+    // wire up — it only exists for the same-key-safety reason the other
+    // endpoints do (never ship a key to the browser). Piper's theme model
+    // already treats this as a normal generation failure and falls back to
+    // its own fixed-scene fallback, so local dev degrades gracefully.
+    sendJson(res, 503, { error: "image_generation_not_available_locally" });
     return;
   }
 

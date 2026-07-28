@@ -9,6 +9,7 @@ import {
 import { DEFAULT_SPEC, specsEqual, validateSpec, type Action, type Spec } from "./spec";
 import { enforceLegibility } from "./legibility";
 import { apiPost } from "../lib/api";
+import { generateBackgroundImage } from "../lib/image";
 
 export const ESCALATION_MODEL = "claude-opus-4-8";
 
@@ -562,7 +563,7 @@ export function residualContentWords(instruction: string): string[] {
 // ---------------------------------------------------------------------------
 
 type ModelResult =
-  | { status: "ok"; spec: Spec; summary: string | null; limitation: string | null }
+  | { status: "ok"; spec: Spec; summary: string | null; limitation: string | null; backgroundImagePrompt: string | null }
   | { status: "invalid"; error: string }
   | { status: "unavailable" };
 
@@ -603,7 +604,8 @@ export function buildSystemPrompt(): string {
     "How the background works — `wallpaper` picks the BASE layer, and the other tokens only apply to the base they belong to:",
     '- wallpaper "custom" -> paints the solid color in wallpaperColor. Use this for "make the background yellow".',
     '- wallpaper "gradient" -> paints a 3-stop gradient from gradientFrom via gradientVia to gradientTo, at gradientAngle degrees. Use this for "sunset fade", "blue to purple", any multi-color background. Pick genuinely pleasing stops.',
-    '- wallpaper "image" -> paints the illustrated scene named in wallpaperImage. ONLY the listed scenes exist; there is no way to fetch or generate any other picture, so if the user asks for a photo you cannot provide, pick the closest listed scene or use a gradient instead.',
+    '- wallpaper "image" -> paints the illustrated scene named in wallpaperImage. ONLY these 8 fixed scenes exist as pre-drawn art.',
+    '- wallpaper "generated" -> paints an AI-GENERATED image. Use this whenever the request describes specific visual content none of the 8 fixed scenes cover — an animal, a character, a specific object or place, a style ("cartoon", "watercolor", "pixel art"), anything you\'d otherwise have had to approximate. See the `backgroundImagePrompt` field below — do NOT set `wallpaperUrl` yourself, you don\'t know it yet.',
     '- wallpaper "none"/"dots"/"grid"/"sunset"/"ocean"/"charcoal" -> legacy fixed presets.',
     "- wallpaperPattern is a SEPARATE overlay drawn on top of whichever base is chosen, at patternOpacity strength. So \"blue background with stripes\" = wallpaper custom + wallpaperColor blue + wallpaperPattern stripes.",
     "",
@@ -638,10 +640,12 @@ export function buildSystemPrompt(): string {
     "",
     "Start from the current spec the user provides, apply the instruction, and keep everything else unchanged.",
     "",
-    "IMPORTANT — you have no way to generate new artwork/photos. `wallpaperImage` is a CLOSED list of 8 hand-drawn scenes (mountains, waves, city, forest, desert, aurora, confetti, bokeh) — nothing else exists, no matter what's asked for (a dog, a specific photo, a logo, etc). If the literal request can't be honored — it names something outside these 8 scenes, or asks for a kind of image Piper can't produce at all — do NOT silently substitute the closest scene and stay quiet about it. Pick the best available approximation (or a plain color/gradient if no scene is even close) AND say so honestly in `limitation`.",
+    "IMAGE GENERATION: if the request describes visual content that needs real generated artwork (see wallpaper \"generated\" above), set `backgroundImagePrompt` to a good, specific, safe image-generation prompt (style + subject, e.g. \"a cute cartoon dog, flat illustration style, colorful, simple background, no text\") — a few seconds after your response, the system will actually generate that image and apply it; you do not need to (and cannot) set wallpaperUrl yourself. ALSO set `theme.wallpaper` to a reasonable fallback (the closest of the 8 fixed scenes, or a gradient) in case generation is temporarily unavailable — your fallback is what's shown if generation fails, so make it a genuine best-effort, not a placeholder. When backgroundImagePrompt is set, leave `limitation` null — the system handles explaining a generation failure itself. When the request has NO image-generation need, leave `backgroundImagePrompt` null.",
+    "",
+    "For every OTHER kind of request the token list + escape hatches above still can't fully satisfy (not image-related), pick the best available approximation and explain honestly in `limitation` rather than silently substituting — e.g. an out-of-scope request for real audio, a data type nothing here can represent, etc.",
     "",
     "Output a JSON OBJECT with exactly these keys — not the bare spec:",
-    '{"spec": {...the full spec, shape above...}, "summary": <short phrase describing what you actually changed, e.g. "set background to a green forest scene">, "limitation": <string|null — null if you fully did what was literally asked; otherwise ONE sentence explaining what you couldn\'t do and what you did instead, e.g. "Piper can\'t generate a picture of a dog — there\'s no image generation, only 8 fixed scenes — so I used the closest available option, a forest, instead.">}',
+    '{"spec": {...the full spec, shape above...}, "summary": <short phrase describing what you actually changed, e.g. "set background to a green forest scene">, "limitation": <string|null — null if you fully did what was literally asked (including when backgroundImagePrompt is set — that counts as fully honoring it); otherwise ONE sentence explaining what you couldn\'t do and what you did instead>, "backgroundImagePrompt": <string|null — a generation prompt as described above, or null>}',
     "",
     "Return ONLY that JSON object. No markdown, no commentary outside the object.",
   ].join("\n");
@@ -702,7 +706,13 @@ async function callModel(instruction: string, current: Spec, model?: string): Pr
     envelope && typeof envelope === "object" && typeof (envelope as { limitation?: unknown }).limitation === "string"
       ? (envelope as { limitation: string }).limitation
       : null;
-  return { status: "ok", spec: enforceLegibility(validated.spec), summary, limitation };
+  const backgroundImagePrompt =
+    envelope &&
+    typeof envelope === "object" &&
+    typeof (envelope as { backgroundImagePrompt?: unknown }).backgroundImagePrompt === "string"
+      ? (envelope as { backgroundImagePrompt: string }).backgroundImagePrompt
+      : null;
+  return { status: "ok", spec: enforceLegibility(validated.spec), summary, limitation, backgroundImagePrompt };
 }
 
 export interface GenerateResult {
@@ -714,6 +724,29 @@ export interface GenerateResult {
   // image generation, only 8 fixed scenes. Surfaced distinctly so a
   // substitution is never silent.
   limitation?: string;
+}
+
+// When the model set backgroundImagePrompt, actually generate the image and
+// swap it into the spec. On failure, keep the model's own fallback wallpaper
+// (it was told to always provide one) and explain the failure instead of the
+// model's null limitation — the model can't know in advance whether
+// generation will succeed, so this is the one limitation the CLIENT writes
+// rather than the model.
+async function resolveBackgroundImage(result: GenerateResult & { backgroundImagePrompt: string | null }): Promise<GenerateResult> {
+  const { backgroundImagePrompt, ...rest } = result;
+  if (!backgroundImagePrompt) return rest;
+  const image = await generateBackgroundImage(backgroundImagePrompt);
+  if (image.ok) {
+    return {
+      ...rest,
+      spec: { ...rest.spec, theme: { ...rest.spec.theme, wallpaper: "generated", wallpaperUrl: image.url } },
+      summary: rest.summary === "updated (via Claude)" || !rest.summary ? "generated a custom background image" : rest.summary,
+    };
+  }
+  return {
+    ...rest,
+    limitation: `Couldn't generate a custom image (${image.error}) — used a built-in option instead.`,
+  };
 }
 
 // The free, instant fast path in isolation: returns a spec only when the keyword
@@ -767,23 +800,25 @@ export async function generateSpec(
   // and, if that also comes back empty, tell the user plainly rather than
   // reporting a false "updated" when nothing visibly changed.
   if (modelResult.status === "ok" && !specsEqual(modelResult.spec, current)) {
-    return {
+    return await resolveBackgroundImage({
       spec: modelResult.spec,
       summary: modelResult.summary ?? "updated (via Claude)",
       matched: true,
       limitation: modelResult.limitation ?? undefined,
-    };
+      backgroundImagePrompt: modelResult.backgroundImagePrompt,
+    });
   }
 
   if (modelResult.status === "ok" || modelResult.status === "invalid") {
     const escalated = await callModel(trimmed, current, ESCALATION_MODEL);
     if (escalated.status === "ok" && !specsEqual(escalated.spec, current)) {
-      return {
+      return await resolveBackgroundImage({
         spec: escalated.spec,
         summary: escalated.summary ?? "updated (via Claude, escalated)",
         matched: true,
         limitation: escalated.limitation ?? undefined,
-      };
+        backgroundImagePrompt: escalated.backgroundImagePrompt,
+      });
     }
     const errorText =
       escalated.status === "invalid"

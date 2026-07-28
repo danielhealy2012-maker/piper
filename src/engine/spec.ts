@@ -16,6 +16,21 @@ import {
 const HEX_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 const hex = () => z.string().regex(HEX_RE, "must be a hex color");
 
+// wallpaperUrl is never set by the model directly (it's not in THEME_TOKENS,
+// so the model's prompt never even mentions it) — only the orchestrator sets
+// it, after a real image generation call succeeds. This validator is the
+// backstop against a corrupted/tampered spec (e.g. hand-edited localStorage)
+// injecting an arbitrary external URL: it must be an https URL under this
+// project's own Supabase Storage "backgrounds" bucket, or empty.
+const SUPABASE_URL = (import.meta as { env?: Record<string, string> }).env?.VITE_SUPABASE_URL ?? "";
+const STORAGE_PREFIX = SUPABASE_URL ? `${SUPABASE_URL}/storage/v1/object/public/backgrounds/` : null;
+const wallpaperUrlSchema = z
+  .string()
+  .max(500)
+  .refine((v) => v === "" || (v.startsWith("https://") && (!STORAGE_PREFIX || v.startsWith(STORAGE_PREFIX))), {
+    message: "wallpaperUrl must be a Supabase Storage public URL",
+  });
+
 export const ThemeSchema = z.object({
   chatTitle: z.string().max(40),
   bubbleColorOutgoing: hex(),
@@ -35,6 +50,7 @@ export const ThemeSchema = z.object({
   gradientTo: hex(),
   gradientAngle: z.number().min(0).max(360),
   wallpaperImage: z.enum(WALLPAPER_IMAGES),
+  wallpaperUrl: wallpaperUrlSchema,
   wallpaperPattern: z.enum(WALLPAPER_PATTERNS),
   patternOpacity: z.number().min(0).max(1),
   bubbleTail: z.boolean(),
@@ -184,6 +200,7 @@ export const DEFAULT_SPEC: Spec = {
     gradientTo: "#a86bd8",
     gradientAngle: 160,
     wallpaperImage: "none",
+    wallpaperUrl: "",
     wallpaperPattern: "none",
     patternOpacity: 0.15,
     bubbleTail: false,

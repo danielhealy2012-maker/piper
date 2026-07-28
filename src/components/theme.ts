@@ -50,6 +50,7 @@ type WallpaperTheme = Pick<
   | "gradientTo"
   | "gradientAngle"
   | "wallpaperImage"
+  | "wallpaperUrl"
   | "wallpaperPattern"
   | "patternOpacity"
 >;
@@ -84,6 +85,17 @@ function baseLayer(theme: WallpaperTheme): { color: string; layer: Layer | null 
         color: "#ffffff",
         layer: {
           image: `url(/wallpapers/${theme.wallpaperImage}.svg)`,
+          size: "cover",
+          repeat: "no-repeat",
+          position: "center",
+        },
+      };
+    case "generated":
+      if (!theme.wallpaperUrl) return { color: "#ffffff", layer: null };
+      return {
+        color: "#ffffff",
+        layer: {
+          image: `url(${theme.wallpaperUrl})`,
           size: "cover",
           repeat: "no-repeat",
           position: "center",

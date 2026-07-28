@@ -11,7 +11,12 @@ export const MODEL = process.env.PIPER_MODEL || "claude-haiku-4-5";
 
 export const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic() : null;
 
-const admin =
+// Exported (not module-private) so endpoints that need direct table/storage
+// access beyond requireUser/meter — currently just api/image.js, for the
+// generated_backgrounds cache table and the "backgrounds" storage bucket —
+// can use it. Always the service role client; RLS is bypassed intentionally
+// for these server-only writes.
+export const admin =
   process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY
     ? createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
         auth: { persistSession: false },

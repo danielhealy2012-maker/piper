@@ -7,8 +7,10 @@ import { z } from "zod";
 export const FONT_FAMILIES = ["system", "rounded", "mono", "serif"] as const;
 export const DENSITIES = ["compact", "comfortable", "spacious"] as const;
 // `wallpaper` selects the BASE layer. "custom" reads wallpaperColor, "gradient"
-// reads the gradient* tokens, "image" reads wallpaperImage. wallpaperPattern is an
-// independent overlay that composites on top of whichever base is selected.
+// reads the gradient* tokens, "image" reads wallpaperImage, "generated" reads
+// wallpaperUrl (an AI-generated image — see lib/image.ts and api/image.js).
+// wallpaperPattern is an independent overlay that composites on top of
+// whichever base is selected.
 export const WALLPAPERS = [
   "none",
   "dots",
@@ -19,6 +21,7 @@ export const WALLPAPERS = [
   "custom",
   "gradient",
   "image",
+  "generated",
 ] as const;
 export const WALLPAPER_IMAGES = [
   "none",

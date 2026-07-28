@@ -123,15 +123,28 @@ across the You/Sam viewer toggle.
   showTimestamps, bubbleTail, sentimentTint, plus the background stack below.
 - **Backgrounds are layered.** `wallpaper` picks the BASE, and each base reads its own tokens:
   `custom` -> `wallpaperColor` (any hex); `gradient` -> `gradientFrom`/`gradientVia`/`gradientTo`
-  at `gradientAngle`; `image` -> `wallpaperImage` (a bundled scene); plus the legacy fixed
-  presets `none`/`dots`/`grid`/`sunset`/`ocean`/`charcoal`. `wallpaperPattern` +
-  `patternOpacity` are an INDEPENDENT overlay composited on top of whichever base is chosen,
-  which is what makes "blue background with stripes" expressible.
+  at `gradientAngle`; `image` -> `wallpaperImage` (a bundled scene); `generated` ->
+  `wallpaperUrl` (a real AI-generated image, see below); plus the legacy fixed presets
+  `none`/`dots`/`grid`/`sunset`/`ocean`/`charcoal`. `wallpaperPattern` + `patternOpacity` are an
+  INDEPENDENT overlay composited on top of whichever base is chosen, which is what makes "blue
+  background with stripes" expressible.
 - **Bundled scenes** live in `public/wallpapers/*.svg` — hand-authored illustrated SVGs
-  (mountains, waves, city, forest, desert, aurora, confetti, bokeh), NOT photographs. There is
-  no image search or image generation: if a user asks for a photo, the only options are the
-  closest bundled scene or a gradient. `theme.ts`'s `DARK_SCENES` marks which ones need light
-  chrome; `isDarkWallpaper()` also luminance-averages gradient stops and custom colors.
+  (mountains, waves, city, forest, desert, aurora, confetti, bokeh), NOT photographs. `theme.ts`'s
+  `DARK_SCENES` marks which ones need light chrome; `isDarkWallpaper()` also luminance-averages
+  gradient stops and custom colors.
+- **Real image generation** (`wallpaper: "generated"`) fills the gap the 8 fixed scenes can't:
+  `generate.ts`'s theming model sets `backgroundImagePrompt` (a text prompt it authors — it never
+  sees or sets `wallpaperUrl` itself) plus a normal fallback wallpaper in case generation fails.
+  `generateSpec()`'s `resolveBackgroundImage()` then calls `lib/image.ts` -> `api/image.js`
+  (Replicate/Flux-schnell), which hashes the prompt, checks the `generated_backgrounds` cache
+  table first (repeat prompts cost nothing), and otherwise generates, re-hosts the image in the
+  Supabase Storage `backgrounds` bucket (migration `0002_image_storage.sql`) for a stable URL,
+  and caches the row. `spec.ts`'s `wallpaperUrl` validator is the actual trust boundary: it only
+  accepts an https URL under this project's own Storage host, which is what makes "the model
+  can only author a prompt, never a URL" true even against a tampered/rehydrated spec. Metered
+  under the existing `image` usage kind (`api/_lib.js`'s `DAILY_LIMITS`). Not available in local
+  dev (`server/proxy.mjs` returns a clean 503 for `/api/image`; the theme model's own fallback
+  wallpaper is what's shown instead).
 - **3 slots**: `messageActions` (TranslateButton, SummarizeButton, CopyButton, PinButton,
   ReactionBar, ReadReceipt), `composerActions` (ToneShifter, ClearButton,
   VoiceNote, GifPicker, Poll, ScheduledSend, AIReplyDraft), `headerActions` (SearchBox,

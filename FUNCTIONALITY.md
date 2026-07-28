@@ -1,7 +1,7 @@
 # Piper — Functionality Matrix
 
-**Last updated:** 2026-07-26  
-**Current Phase:** Phase 1 (Multiplayer foundation)
+**Last updated:** 2026-07-27  
+**Current Phase:** Phase 1 (Multiplayer foundation) + real image generation (Phase 2 item, done early)
 
 ---
 
@@ -11,16 +11,19 @@
 
 | Feature | Status | Details |
 |---------|--------|---------|
-| 24 theme tokens | ✅ | Colors, fonts, backgrounds, density, corners, etc. |
+| Theme tokens | ✅ | Colors, fonts, backgrounds, density, corners, borders, etc. — ~27 tokens |
 | Dynamic theme generation | ✅ | Claude understands "green bubbles", "sunset gradient", etc. |
 | Theme reset | ✅ | Back to default with undo support |
-| Theme randomize | ✅ | Pick a random valid theme spec |
+| Theme randomize | ✅ | Real client-side randomizer (no network call), then legibility-corrected |
 | Per-user theme persistence | ✅ | Supabase `member_theme` table, private via RLS |
 | Real-time theme sync | ✅ | Changes visible instantly (no page refresh) |
-| 24 bundled background scenes | ✅ | mountains, waves, city, forest, desert, aurora, confetti, bokeh |
+| 8 bundled background scenes | ✅ | mountains, waves, city, forest, desert, aurora, confetti, bokeh |
+| **AI-generated background images** | ✅ | `/api/image.js` (Replicate/Flux-schnell), cached by prompt hash in Supabase Storage — "a cartoon dog" now actually generates one instead of falling back to a fixed scene |
 | Gradient backgrounds | ✅ | From/via/to colors at custom angle |
 | Custom solid colors | ✅ | Any hex color for backgrounds |
 | Pattern overlays | ✅ | dots, grid, stripes, checks, crosshatch |
+| Custom CSS / animations | ✅ | Free-form CSS per zone + `@keyframes`, for anything tokens can't express (shapes, glows) |
+| Custom one-shot effects | ✅ | Model-authored JS run on message/reaction events (confetti, flashes, etc.) |
 
 ### Message Operations (Shared State)
 
