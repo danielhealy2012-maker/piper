@@ -117,83 +117,6 @@ export function validatePlan(candidate: unknown): ValidatePlanResult {
 }
 
 // ---------------------------------------------------------------------------
-// Pure appliers. Each takes the message list and returns a new one — no
-// mutation, so snapshotting for undo is a shallow copy. translateMessage is NOT
-// here because it needs a network call; the orchestrator handles that one.
-// ---------------------------------------------------------------------------
-
-export function applyEdit(messages: ChatMessage[], id: string, newText: string): ChatMessage[] {
-  return messages.map((m) => (m.id === id ? { ...m, text: newText } : m));
-}
-
-export function applyDelete(messages: ChatMessage[], id: string): ChatMessage[] {
-  return messages.filter((m) => m.id !== id);
-}
-
-export function applyReaction(messages: ChatMessage[], id: string, emoji: string): ChatMessage[] {
-  return messages.map((m) => {
-    if (m.id !== id) return m;
-    const reactions = m.reactions ?? [];
-    const next = reactions.includes(emoji)
-      ? reactions.filter((e) => e !== emoji)
-      : [...reactions, emoji];
-    return { ...m, reactions: next };
-  });
-}
-
-export function applyDeleteReaction(messages: ChatMessage[], id: string, emoji: string): ChatMessage[] {
-  return messages.map((m) => (m.id === id ? { ...m, reactions: (m.reactions ?? []).filter((e) => e !== emoji) } : m));
-}
-
-export function applyDeleteAllReactions(messages: ChatMessage[], id: string): ChatMessage[] {
-  return messages.map((m) => (m.id === id ? { ...m, reactions: [] } : m));
-}
-
-export function applyDeleteAllMessagesBy(messages: ChatMessage[], authorId: string): ChatMessage[] {
-  return messages.filter((m) => m.authorId !== authorId);
-}
-
-// Pin, star, filter: these are UI-state operations, not message-list mutations.
-// Keeping them here as no-ops since they're handled in Workspace state.
-export function applyPinMessage(messages: ChatMessage[], _id: string): ChatMessage[] {
-  return messages;
-}
-
-export function applyUnpinMessage(messages: ChatMessage[], _id: string): ChatMessage[] {
-  return messages;
-}
-
-export function applyStarMessage(messages: ChatMessage[], _id: string): ChatMessage[] {
-  return messages;
-}
-
-export function applyUnstarMessage(messages: ChatMessage[], _id: string): ChatMessage[] {
-  return messages;
-}
-
-export function applyFilterByAuthor(messages: ChatMessage[], _authorId: string | null): ChatMessage[] {
-  return messages;
-}
-
-// Query/generation actions (summarize, generate, suggest) are no-ops here
-// but trigger API calls in the orchestrator.
-export function applySummarizeConversation(messages: ChatMessage[]): ChatMessage[] {
-  return messages;
-}
-
-export function applyGenerateResponse(messages: ChatMessage[]): ChatMessage[] {
-  return messages;
-}
-
-export function applySuggestReplies(messages: ChatMessage[]): ChatMessage[] {
-  return messages;
-}
-
-export function messageExists(messages: ChatMessage[], id: string): boolean {
-  return messages.some((m) => m.id === id);
-}
-
-// ---------------------------------------------------------------------------
 // Router prompt — built from the catalog + live conversation, one source of
 // truth. The model resolves message references ("Sam's last message") to ids
 // itself; execution re-checks every id exists, so a hallucinated id is skipped,
@@ -216,7 +139,6 @@ export function buildRouterPrompt(): string {
     "   Reactions: reactToMessage, deleteReaction, deleteAllReactions",
     "   Annotations: pinMessage, unpinMessage, starMessage, unstarMessage",
     "   Queries: summarizeConversation, generateResponse, suggestReplies",
-    "   Filters: filterByAuthor",
     "",
     "MESSAGE ACTION DETAILS:",
     '  - {"kind":"translateMessage","messageId":<id>,"targetLanguage":"French"} — any language.',
@@ -233,7 +155,6 @@ export function buildRouterPrompt(): string {
     '  - {"kind":"summarizeConversation"} — generate a summary.',
     '  - {"kind":"generateResponse"} — AI draft a reply.',
     '  - {"kind":"suggestReplies"} — 3 suggested replies.',
-    '  - {"kind":"filterByAuthor","authorId":"<id or null>"} — show only one person\'s messages (or null to clear).',
     "",
     "Resolve message references yourself using the list below. Match by quote, position (\\\"last message\\\", \\\"first message\\\", \\\"second message\\\"), or author. Use the exact id from the list. NEVER invent an id.",
     "",
@@ -255,6 +176,18 @@ export function describeConversation(messages: ChatMessage[], users: DisplayUser
     const label = u?.name ?? authorId;
     return authorId === viewerId ? `${label} (the current user / "me")` : label;
   };
+  // Actions like deleteAllMessagesBy/filterByAuthor need a real author id, not
+  // just a display name — without this list the model has nothing to put in
+  // `authorId` but a guess, which fails the database's uuid check.
+  const participantLines = users.map(
+    (u) => `- authorId=${u.id} | ${u.name}${u.id === viewerId ? ' (the current user / "me")' : ""}`,
+  );
   const lines = messages.map((m) => `- id=${m.id} | ${nameFor(m.authorId)}: ${JSON.stringify(m.text)}`);
-  return `Current conversation (oldest first):\n${lines.join("\n")}`;
+  return [
+    `Participants (use these exact authorId values for deleteAllMessagesBy/filterByAuthor):`,
+    participantLines.join("\n"),
+    "",
+    `Current conversation (oldest first):`,
+    lines.join("\n"),
+  ].join("\n");
 }

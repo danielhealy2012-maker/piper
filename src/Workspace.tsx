@@ -2,9 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Chat } from "./components/Chat";
 import type { TranslationEntry } from "./components/slots";
 import { generateSpec, keywordOnly } from "./engine/generate";
+import { randomizeSpec } from "./engine/randomize";
 import { routeInstruction } from "./engine/route";
 import { translateText } from "./engine/translate";
 import { generateResponse, suggestReplies, summarizeConversation } from "./lib/queries";
+import { errorMessage } from "./lib/errors";
 import { DEFAULT_SPEC, type Spec } from "./engine/spec";
 import type { ChatBackend, DisplayUser } from "./lib/backend";
 import type { ChatMessage } from "./lib/types";
@@ -242,21 +244,18 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
         });
         applied.push("reset theme");
       } else if (plan.themeMutation === "randomize") {
-        // Generate a random spec by picking random values from the registry
-        const r = await generateSpec("random colorful fun theme", spec);
-        if (r.matched) {
-          const previous = spec;
-          setSpec(r.spec);
-          await backend.saveTheme(r.spec);
-          inverses.push({
-            label: "theme",
-            run: async () => {
-              setSpec(previous);
-              await backend.saveTheme(previous);
-            },
-          });
-          applied.push("randomized theme");
-        }
+        const previous = spec;
+        const next = randomizeSpec(spec);
+        setSpec(next);
+        await backend.saveTheme(next);
+        inverses.push({
+          label: "theme",
+          run: async () => {
+            setSpec(previous);
+            await backend.saveTheme(previous);
+          },
+        });
+        applied.push("randomized theme");
       }
 
       // Handle theme instruction (appearance request)
@@ -331,19 +330,34 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
               });
               applied.push(`reacted ${action.emoji}`);
               break;
-            case "deleteReaction":
-              // For now, toggle the reaction (which acts like delete if it exists)
-              await backend.react(action.messageId, action.emoji);
-              inverses.push({
-                label: "deleteReaction",
-                run: () => backend.react(action.messageId, action.emoji),
-              });
-              applied.push(`removed ${action.emoji}`);
+            case "deleteReaction": {
+              const removed = await backend.unreact(action.messageId, action.emoji);
+              if (removed) {
+                inverses.push({
+                  label: "deleteReaction",
+                  run: () => backend.react(action.messageId, action.emoji),
+                });
+                applied.push(`removed ${action.emoji}`);
+              } else {
+                notes.push(`you haven't reacted with ${action.emoji} on that message`);
+              }
               break;
-            case "deleteAllReactions":
-              // Placeholder: would need backend support
-              notes.push("clearing reactions (needs backend implementation)");
+            }
+            case "deleteAllReactions": {
+              const removedEmojis = await backend.unreactAll(action.messageId);
+              if (removedEmojis.length > 0) {
+                inverses.push({
+                  label: "deleteAllReactions",
+                  run: async () => {
+                    for (const emoji of removedEmojis) await backend.react(action.messageId, emoji);
+                  },
+                });
+                applied.push(`removed ${removedEmojis.length} reaction${removedEmojis.length === 1 ? "" : "s"}`);
+              } else {
+                notes.push("you have no reactions on that message to remove");
+              }
               break;
+            }
             case "translateMessage": {
               const result = await translateText(message.text, action.targetLanguage);
               if (result.ok && result.sameLanguage) {
@@ -417,8 +431,15 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
           }
         }
 
-        // Actions that don't require a messageId
+        // Actions that don't require a messageId. `continue` (not `break`) —
+        // this is one iteration of a loop over possibly-multiple actions in
+        // the plan; `break` would silently abandon every action after this
+        // one in a compound instruction.
         if (action.kind === "deleteAllMessagesBy") {
+          if (!users.some((u) => u.id === action.authorId)) {
+            notes.push("couldn't identify which person you meant");
+            continue;
+          }
           const deletedIds = await backend.removeAllBy(action.authorId);
           if (deletedIds.length > 0) {
             inverses.push({
@@ -431,7 +452,7 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
           } else {
             notes.push("that person has no messages to delete");
           }
-          break;
+          continue;
         }
 
         if (action.kind === "summarizeConversation") {
@@ -442,7 +463,7 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
           } else {
             notes.push(`couldn't summarize (${result.error})`);
           }
-          break;
+          continue;
         }
 
         if (action.kind === "generateResponse") {
@@ -453,7 +474,7 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
           } else {
             notes.push(`couldn't generate reply (${result.error})`);
           }
-          break;
+          continue;
         }
 
         if (action.kind === "suggestReplies") {
@@ -464,17 +485,16 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
           } else {
             notes.push(`couldn't suggest replies (${result.error})`);
           }
-          break;
+          continue;
         }
 
         if (action.kind === "filterByAuthor") {
-          // Filter is handled in UI state (would need a new Workspace state field)
-          if (action.authorId) {
-            applied.push("filtering by author");
-          } else {
-            applied.push("cleared author filter");
-          }
-          break;
+          // Not implemented yet — no UI state consumes this. Report honestly
+          // rather than claiming success for something that visibly does
+          // nothing (violates the "no silent failures" principle elsewhere
+          // in this file).
+          notes.push("filtering the view by author isn't available yet");
+          continue;
         }
       }
 
@@ -497,7 +517,7 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
       }
       setInstruction("");
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       logResult(text.trim(), msg, false);
       setNotice(msg);
     } finally {

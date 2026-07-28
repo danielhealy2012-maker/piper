@@ -7,6 +7,8 @@ import {
   fetchReactions,
   listMembers,
   loadTheme,
+  removeAllReactionsForMessage,
+  removeReaction,
   saveTheme,
   sendMessage,
   subscribeConversation,
@@ -48,6 +50,12 @@ export interface ChatBackend {
   removeAllBy(authorId: string): Promise<string[]>;
   /** Toggles the emoji, so calling twice is its own inverse. */
   react(id: string, emoji: string): Promise<void>;
+  /** Removes (never adds) the viewer's own reaction. Returns false if they
+   *  had no such reaction — never silently adds one, unlike react(). */
+  unreact(id: string, emoji: string): Promise<boolean>;
+  /** Removes all of the viewer's own reactions on a message; returns the
+   *  removed emojis so the caller can undo. */
+  unreactAll(id: string): Promise<string[]>;
   updateTitle(title: string): Promise<void>;
   clearMessages(): Promise<void>;
 }
@@ -150,6 +158,28 @@ export function createLocalBackend(viewerId: string): ChatBackend {
       });
       notifyLocal();
     },
+    async unreact(id, emoji) {
+      let removed = false;
+      localState.messages = localState.messages.map((m) => {
+        if (m.id !== id) return m;
+        const current = m.reactions ?? [];
+        if (!current.includes(emoji)) return m;
+        removed = true;
+        return { ...m, reactions: current.filter((e) => e !== emoji) };
+      });
+      notifyLocal();
+      return removed;
+    },
+    async unreactAll(id) {
+      let removedEmojis: string[] = [];
+      localState.messages = localState.messages.map((m) => {
+        if (m.id !== id) return m;
+        removedEmojis = m.reactions ?? [];
+        return { ...m, reactions: [] };
+      });
+      notifyLocal();
+      return removedEmojis;
+    },
     async updateTitle(_title) {
       // Local demo doesn't have conversation titles
     },
@@ -221,6 +251,8 @@ export function createSupabaseBackend(conversationId: string, userId: string): C
       await sb.from("messages").update({ deleted_at: null }).eq("id", id);
     },
     react: (id, emoji) => toggleReaction(id, userId, emoji),
+    unreact: (id, emoji) => removeReaction(id, userId, emoji),
+    unreactAll: (id) => removeAllReactionsForMessage(id, userId),
     updateTitle: (title) => updateConversationTitle(conversationId, title),
     clearMessages: () => clearConversationMessages(conversationId),
     removeAllBy: (authorId) => deleteAllMessagesByAuthor(conversationId, authorId),

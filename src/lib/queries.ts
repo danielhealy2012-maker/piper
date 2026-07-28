@@ -1,6 +1,7 @@
 import type { ChatMessage } from "./types";
 import type { DisplayUser } from "./backend";
 import { apiPost } from "./api";
+import { errorMessage } from "./errors";
 
 export interface SummarizeResult {
   ok: boolean;
@@ -23,7 +24,7 @@ export async function summarizeConversation(
     const data = (await res.json()) as { summary?: string; error?: string };
     return data.summary ? { ok: true, summary: data.summary } : { ok: false, error: data.error };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : "Unknown error" };
+    return { ok: false, error: errorMessage(err) };
   }
 }
 
@@ -48,7 +49,7 @@ export async function generateResponse(
     const data = (await res.json()) as { response?: string; error?: string };
     return data.response ? { ok: true, response: data.response } : { ok: false, error: data.error };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : "Unknown error" };
+    return { ok: false, error: errorMessage(err) };
   }
 }
 
@@ -73,6 +74,6 @@ export async function suggestReplies(
     const data = (await res.json()) as { replies?: string[]; error?: string };
     return data.replies ? { ok: true, replies: data.replies } : { ok: false, error: data.error };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : "Unknown error" };
+    return { ok: false, error: errorMessage(err) };
   }
 }

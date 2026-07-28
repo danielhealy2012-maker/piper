@@ -8,6 +8,7 @@ import {
   sendJson,
   sliceJson,
   textOf,
+  errorMessage,
 } from "./_lib.js";
 
 const LEGACY = { es: "Spanish", fr: "French", de: "German", ja: "Japanese" };
@@ -72,6 +73,6 @@ export default async function handler(req, res) {
       translation: typeof parsed.translation === "string" ? parsed.translation.trim() : "",
     });
   } catch (err) {
-    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
+    sendJson(res, 500, { error: errorMessage(err) });
   }
 }

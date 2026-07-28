@@ -194,6 +194,37 @@ export async function toggleReaction(messageId: string, userId: string, emoji: s
   }
 }
 
+/** Removes exactly the viewer's own reaction — a real delete, not a toggle.
+ *  RLS only allows deleting your own reaction rows (`user_id = auth.uid()`),
+ *  so this can never remove someone else's; returns false rather than
+ *  silently adding one when the viewer has no such reaction to remove. */
+export async function removeReaction(messageId: string, userId: string, emoji: string): Promise<boolean> {
+  const sb = requireSupabase();
+  const { data, error } = await sb
+    .from("reactions")
+    .delete()
+    .eq("message_id", messageId)
+    .eq("user_id", userId)
+    .eq("emoji", emoji)
+    .select("emoji");
+  if (error) throw error;
+  return (data ?? []).length > 0;
+}
+
+/** Removes all of the viewer's own reactions on a message; returns the
+ *  removed emojis so the caller can build an undo. */
+export async function removeAllReactionsForMessage(messageId: string, userId: string): Promise<string[]> {
+  const sb = requireSupabase();
+  const { data, error } = await sb
+    .from("reactions")
+    .delete()
+    .eq("message_id", messageId)
+    .eq("user_id", userId)
+    .select("emoji");
+  if (error) throw error;
+  return (data ?? []).map((r) => r.emoji as string);
+}
+
 // ---------------------------------------------------------------------------
 // Theme (PERSONAL state — RLS makes these rows owner-only)
 // ---------------------------------------------------------------------------

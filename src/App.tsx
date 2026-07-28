@@ -6,6 +6,7 @@ import { createLocalBackend, createSupabaseBackend } from "./lib/backend";
 import { getOrCreateConversation, joinByInviteCode, signOut } from "./lib/db";
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
 import { getBuildInfo, type BuildInfo } from "./lib/build-info";
+import { errorMessage } from "./lib/errors";
 import type { Conversation } from "./lib/types";
 
 /** `?invite=<code>` (or `/join/<code>`) lets a friend join your conversation.
@@ -118,14 +119,8 @@ function Multiplayer() {
         console.log("[auth] got conversation:", conv.id);
         if (alive) setConversation(conv);
       } catch (err) {
-        const msg =
-          err instanceof Error
-            ? err.message
-            : typeof err === "object" && err !== null && "message" in err
-              ? String((err as any).message)
-              : String(err);
         console.error("Failed to join or create conversation:", err);
-        if (alive) setError(msg || "Something went wrong (no message)");
+        if (alive) setError(errorMessage(err));
       }
     })();
     return () => {

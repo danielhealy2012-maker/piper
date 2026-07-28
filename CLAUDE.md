@@ -49,11 +49,20 @@ no dynamic import. There are two catalogs:
 1. **Theme spec** (`registry.ts` → `spec.ts` `validateSpec` → `slots.tsx` `renderAction` → DOM).
    Controls appearance. `validateSpec` is the only path to the themed DOM and runs on stub
    output, model output, AND localStorage-rehydrated specs (`persist.ts` distrusts old specs).
-2. **Action plan** (`actions.ts` → `PlanSchema`/`validatePlan` → pure appliers → message state).
-   Controls conversation content. Same principle: the router picks typed actions, `validatePlan`
-   gates them, and the pure appliers (`applyEdit`/`applyDelete`/`applyReaction`) are the only
-   code that mutates messages. A hallucinated message id is re-checked at execution
-   (`messageExists`) and skipped, never applied.
+   Two escape hatches for anything the fixed 20-odd tokens can't express: `customCSS` (free-form
+   CSS properties per zone — bubbleOutgoing/bubbleIncoming/background/header) and
+   `customEffects` (JS source compiled with `new Function` and run against a container node on
+   message/reaction events). See `engine/legibility.ts`'s `enforceLegibility()` — a
+   post-processing pass that corrects low-contrast text and un-padded shape clips the model
+   generates, since prompting alone doesn't reliably prevent those.
+2. **Action plan** (`actions.ts` → `PlanSchema`/`validatePlan` → `Workspace.tsx`'s
+   `runInstruction`). Controls conversation content. The router picks typed actions,
+   `validatePlan` gates them, and `runInstruction` executes each by calling the current
+   `ChatBackend` (`edit`/`remove`/`react`/`removeAllBy`/etc. in `lib/backend.ts`) — there is no
+   separate "pure applier" layer; the backend call *is* the mutation, and for the Supabase
+   backend, Postgres RLS is the actual enforcement point, not client code. A hallucinated
+   message id is re-checked against the live message list before any backend call and skipped
+   if absent.
 
 The intelligence is in *routing and parameter-filling*, not code generation — which is why
 "submit any prompt and it figures it out" stays safe and testable.
@@ -65,14 +74,26 @@ The intelligence is in *routing and parameter-filling*, not code generation — 
 1. **Free keyword fast-path** (`keywordOnly` in `generate.ts`) — pure theme edits handled by
    the deterministic stub, instant, no network.
 2. **Router** — `routeInstruction` POSTs the instruction + a description of the live
-   conversation to `/api/route`. The model returns a `Plan`:
-   `{ messageActions[], themeInstruction, reply, feasible }`.
-   - `messageActions`: `translateMessage` (free-text `targetLanguage`), `editMessage`,
-     `deleteMessage`, `reactToMessage`. The model resolves references ("Sam's last message")
-     to concrete ids itself.
-   - `themeInstruction`: the appearance part of the request, delegated **verbatim to the
-     existing `generateSpec`** so we reuse all its validated 24-token color/gradient/scene
-     logic instead of re-teaching the router. null when there's no appearance part.
+   conversation (messages AND a participants list with real `authorId` values — actions like
+   `deleteAllMessagesBy` need a real id, not just a display name) to `/api/route`. The model
+   returns a `Plan`: `{ messageActions[], themeInstruction, themeMutation, conversationTitle,
+   clearConversation, reply, feasible, needsClarification }`.
+   - `messageActions`: `translateMessage`, `editMessage`, `deleteMessage`,
+     `deleteAllMessagesBy`, `reactToMessage`, `deleteReaction`, `deleteAllReactions`,
+     `pinMessage`/`unpinMessage`, `starMessage`/`unstarMessage`, `summarizeConversation`,
+     `generateResponse`, `suggestReplies`. The model resolves references ("Sam's last message")
+     to concrete ids itself. Reaction deletes are real deletes, never a toggle that could add
+     one back — RLS only allows deleting your own reaction row, so `deleteReaction` reports "no
+     such reaction" rather than silently reacting when the target isn't the viewer's own.
+   - `themeInstruction`: the appearance part of the request (including animations/one-shot
+     effects — these are appearance, not a separate capability), delegated **verbatim to the
+     existing `generateSpec`**. `themeMutation` (`"reset"|"randomize"`) is for explicit theme
+     resets rather than a described change. null/null when there's no appearance part.
+   - `conversationTitle` / `clearConversation`: rename or wipe the conversation.
+   - `needsClarification`: true ONLY for genuine ambiguity (multiple plausible readings), never
+     for merely-underspecified-but-obvious requests — the router should act, not ask, whenever
+     it can make a confident call. When true, `Workspace.tsx` shows the question in a distinct
+     blue box and treats the next instruction as the answer, merging it with the original ask.
    - `reply` + `feasible`: when nothing maps, `feasible:false` and `reply` explains why and
      suggests the closest capability — this is the "assess feasibility, tell the user" path,
      surfaced as the prominent amber notice.
@@ -80,8 +101,17 @@ The intelligence is in *routing and parameter-filling*, not code generation — 
    deployment section above — snapshots are wrong here). Destructive actions apply
    immediately and are reversible rather than gated behind a confirm.
 
-Adding a new capability = one entry in `MessageActionSchema` + one pure applier + one line in
-`buildRouterPrompt`. That's the extension model — grow the catalog, never generate code.
+Adding a new capability = one entry in `MessageActionSchema` + one case in `runInstruction`'s
+action switch (backed by a real `ChatBackend` method if it's a new kind of mutation) + one line
+in `buildRouterPrompt`. That's the extension model — grow the catalog, never generate code for
+conversation actions. (Appearance is the one place actual code-shaped output — CSS/JS strings —
+is allowed through, via the two spec escape hatches above, precisely because it renders/executes
+in a way that can't reach outside the chat UI itself.)
+
+Known gaps as of the last pass: `filterByAuthor` is defined in the schema but not wired to any
+UI state — the router no longer offers it, and if you re-add it to the prompt, build the actual
+filtering first. Pin/star state is in-memory per session (`Workspace.tsx`), not persisted —
+refresh clears it.
 
 Message content is NOT persisted (only theme specs are); it resets on reload and is shared
 across the You/Sam viewer toggle.

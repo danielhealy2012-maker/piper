@@ -93,3 +93,13 @@ export function logUsage(label, model, usage) {
     `[piper] ${label} model=${model} input_tokens=${usage?.input_tokens ?? "?"} output_tokens=${usage?.output_tokens ?? "?"}`,
   );
 }
+
+/** Anthropic/Supabase SDK errors are often plain objects, not Error instances
+ *  — `String(err)` on those degrades to "[object Object]" instead of the
+ *  actual reason, which then surfaces verbatim in the client UI. */
+export function errorMessage(err) {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  if (err && typeof err === "object" && typeof err.message === "string") return err.message;
+  return "Something went wrong";
+}

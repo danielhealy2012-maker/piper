@@ -1,4 +1,4 @@
-import { MODEL, anthropic, logUsage, meter, readJsonBody, requireUser, sendJson, textOf } from "./_lib.js";
+import { MODEL, anthropic, logUsage, meter, readJsonBody, requireUser, sendJson, textOf, errorMessage } from "./_lib.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return sendJson(res, 405, { error: "method_not_allowed" });
@@ -25,6 +25,6 @@ export default async function handler(req, res) {
     logUsage("generate", chosenModel, response.usage);
     sendJson(res, 200, { raw: textOf(response), usage: response.usage, model: chosenModel });
   } catch (err) {
-    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
+    sendJson(res, 500, { error: errorMessage(err) });
   }
 }
