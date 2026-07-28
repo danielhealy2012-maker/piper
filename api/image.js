@@ -47,7 +47,11 @@ export default async function handler(req, res) {
 
     if (!(await meter(user, "image", res))) return;
 
-    const prediction = await fetch(`https://api.replicate.com/v1/models/${REPLICATE_MODEL}/predictions`, {
+    // The /v1/models/{owner}/{model}/predictions shortcut 404s/adapter-errors
+    // for some models depending on how they're published — the general
+    // /v1/predictions endpoint with `model` in the body is the more reliably
+    // documented path and works the same way for official models like this one.
+    const prediction = await fetch("https://api.replicate.com/v1/predictions", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${REPLICATE_TOKEN}`,
@@ -55,6 +59,7 @@ export default async function handler(req, res) {
         Prefer: "wait",
       },
       body: JSON.stringify({
+        model: REPLICATE_MODEL,
         input: {
           prompt: `${prompt}, flat illustration style, clean simple background, no text, no watermark`,
         },
