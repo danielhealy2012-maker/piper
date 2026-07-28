@@ -23,6 +23,15 @@ export const WALLPAPERS = [
   "image",
   "generated",
 ] as const;
+// "generated" is deliberately excluded here — it's a valid persisted value
+// (zod's ThemeSchema uses the full WALLPAPERS list above), but the model must
+// never set it directly: only generate.ts's resolveBackgroundImage() sets it,
+// and only after a real image generation call succeeds. This list is what the
+// auto-generated per-token prompt constraint actually shows the model, so
+// "generated" never appears as something it can just pick like any other
+// wallpaper value (it did, before this fix — the model correctly followed the
+// enum list literally, ignoring a separate paragraph asking it not to).
+export const MODEL_SETTABLE_WALLPAPERS = WALLPAPERS.filter((w) => w !== "generated");
 export const WALLPAPER_IMAGES = [
   "none",
   "mountains",
@@ -67,7 +76,7 @@ export const THEME_TOKENS: Record<string, ThemeTokenDescriptor> = {
   sendButtonStyle: { kind: "enum", label: "Send button icon", values: SEND_BUTTON_STYLES },
   fontFamily: { kind: "enum", label: "Font family", values: FONT_FAMILIES },
   density: { kind: "enum", label: "Message row spacing", values: DENSITIES },
-  wallpaper: { kind: "enum", label: "Chat background base layer", values: WALLPAPERS },
+  wallpaper: { kind: "enum", label: "Chat background base layer", values: MODEL_SETTABLE_WALLPAPERS },
   wallpaperColor: {
     kind: "color",
     label: 'Solid background color, used only when wallpaper is "custom"',

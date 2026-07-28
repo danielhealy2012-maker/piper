@@ -605,8 +605,8 @@ export function buildSystemPrompt(): string {
     '- wallpaper "custom" -> paints the solid color in wallpaperColor. Use this for "make the background yellow".',
     '- wallpaper "gradient" -> paints a 3-stop gradient from gradientFrom via gradientVia to gradientTo, at gradientAngle degrees. Use this for "sunset fade", "blue to purple", any multi-color background. Pick genuinely pleasing stops.',
     '- wallpaper "image" -> paints the illustrated scene named in wallpaperImage. ONLY these 8 fixed scenes exist as pre-drawn art.',
-    '- wallpaper "generated" -> paints an AI-GENERATED image. Use this whenever the request describes specific visual content none of the 8 fixed scenes cover — an animal, a character, a specific object or place, a style ("cartoon", "watercolor", "pixel art"), anything you\'d otherwise have had to approximate. See the `backgroundImagePrompt` field below — do NOT set `wallpaperUrl` yourself, you don\'t know it yet.',
     '- wallpaper "none"/"dots"/"grid"/"sunset"/"ocean"/"charcoal" -> legacy fixed presets.',
+    '- NOTE: "generated" is NOT a value you can set for `wallpaper` — it is reserved for the system to set automatically after a real image is generated (see IMAGE GENERATION below). Always pick one of the values above instead.',
     "- wallpaperPattern is a SEPARATE overlay drawn on top of whichever base is chosen, at patternOpacity strength. So \"blue background with stripes\" = wallpaper custom + wallpaperColor blue + wallpaperPattern stripes.",
     "",
     "Bind each part of the instruction to the thing it actually describes: in \"white background with blue bubbles\", white is the background and blue is bubbleColorOutgoing — do not collapse them into one change. Keep text readable against whatever bubble and background colors you choose.",
@@ -640,7 +640,7 @@ export function buildSystemPrompt(): string {
     "",
     "Start from the current spec the user provides, apply the instruction, and keep everything else unchanged.",
     "",
-    "IMAGE GENERATION: if the request describes visual content that needs real generated artwork (see wallpaper \"generated\" above), set `backgroundImagePrompt` to a good, specific, safe image-generation prompt (style + subject, e.g. \"a cute cartoon dog, flat illustration style, colorful, simple background, no text\") — a few seconds after your response, the system will actually generate that image and apply it; you do not need to (and cannot) set wallpaperUrl yourself. ALSO set `theme.wallpaper` to a reasonable fallback (the closest of the 8 fixed scenes, or a gradient) in case generation is temporarily unavailable — your fallback is what's shown if generation fails, so make it a genuine best-effort, not a placeholder. When backgroundImagePrompt is set, leave `limitation` null — the system handles explaining a generation failure itself. When the request has NO image-generation need, leave `backgroundImagePrompt` null.",
+    "IMAGE GENERATION: if the request describes visual content that needs real generated artwork — an animal, a character, a specific object or place, a style (\"cartoon\", \"watercolor\", \"pixel art\"), anything the 8 fixed scenes don't cover — set `backgroundImagePrompt` to a good, specific, safe image-generation prompt (style + subject, e.g. \"a cute cartoon dog, flat illustration style, colorful, simple background, no text\"). A few seconds after your response, the system will actually generate that image and switch the background to it on its own — you never set `wallpaper` to \"generated\" or touch `wallpaperUrl` yourself, ever (see the NOTE above). Instead, set `theme.wallpaper` to a normal value (the closest of the 8 fixed scenes, or a gradient) exactly as you would for any other request — that's what's shown while generating, and what stays shown if generation fails, so make it a genuine best-effort, not a placeholder. When backgroundImagePrompt is set, leave `limitation` null — the system handles explaining a generation failure itself if one occurs. When the request has NO image-generation need, leave `backgroundImagePrompt` null.",
     "",
     "For every OTHER kind of request the token list + escape hatches above still can't fully satisfy (not image-related), pick the best available approximation and explain honestly in `limitation` rather than silently substituting — e.g. an out-of-scope request for real audio, a data type nothing here can represent, etc.",
     "",
@@ -743,8 +743,20 @@ async function resolveBackgroundImage(result: GenerateResult & { backgroundImage
       summary: rest.summary === "updated (via Claude)" || !rest.summary ? "generated a custom background image" : rest.summary,
     };
   }
+  // Defense in depth: the model is instructed to never set wallpaper to
+  // "generated" itself (that's reserved for a successful result, right
+  // above), but if it disobeys anyway, leaving it as "generated" with no URL
+  // renders as blank white and — worse — gets persisted, making every future
+  // request look like a no-op change against that broken saved state. Fall
+  // back to the spec's own gradient tokens (always present, always valid)
+  // rather than trust the model's wallpaper value in the failure path.
+  const spec =
+    rest.spec.theme.wallpaper === "generated"
+      ? { ...rest.spec, theme: { ...rest.spec.theme, wallpaper: "gradient" as const } }
+      : rest.spec;
   return {
     ...rest,
+    spec,
     limitation: `Couldn't generate a custom image (${image.error}) — used a built-in option instead.`,
   };
 }
