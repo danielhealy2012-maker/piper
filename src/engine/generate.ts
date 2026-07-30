@@ -768,6 +768,33 @@ async function resolveBackgroundImage(result: GenerateResult & { backgroundImage
   };
 }
 
+// Compiling customComponents is deferred to render time in Chat.tsx (that's
+// what keeps Babel out of the base bundle for anyone who never uses this).
+// But that means the orchestrator would otherwise report "success" the
+// instant it gets a valid, DIFFERENT spec back — with no idea whether the
+// component's code will actually compile. Runs the exact same compiler here,
+// before claiming success, so a broken component shows up as a limitation
+// (amber notice) instead of a false green checkmark. Only loads Babel when
+// there's actually a component to check.
+async function validateCustomComponents(result: GenerateResult): Promise<GenerateResult> {
+  if (result.spec.customComponents.length === 0) return result;
+  const [{ compileCustomComponent }, babel] = await Promise.all([
+    import("../components/customComponentRuntime"),
+    import("@babel/standalone"),
+  ]);
+  const failures: string[] = [];
+  for (const c of result.spec.customComponents) {
+    try {
+      compileCustomComponent(babel, c.code);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      failures.push(`"${c.label}" couldn't be built (${reason}) — use its ✕ to remove it.`);
+    }
+  }
+  if (failures.length === 0) return result;
+  return { ...result, limitation: [result.limitation, ...failures].filter(Boolean).join(" ") };
+}
+
 // The free, instant fast path in isolation: returns a spec only when the keyword
 // stub fully and unambiguously understood the instruction. The orchestrator uses
 // this to short-circuit common theme edits before ever calling the router, so a
@@ -819,25 +846,29 @@ export async function generateSpec(
   // and, if that also comes back empty, tell the user plainly rather than
   // reporting a false "updated" when nothing visibly changed.
   if (modelResult.status === "ok" && !specsEqual(modelResult.spec, current)) {
-    return await resolveBackgroundImage({
-      spec: modelResult.spec,
-      summary: modelResult.summary ?? "updated (via Claude)",
-      matched: true,
-      limitation: modelResult.limitation ?? undefined,
-      backgroundImagePrompt: modelResult.backgroundImagePrompt,
-    });
+    return await validateCustomComponents(
+      await resolveBackgroundImage({
+        spec: modelResult.spec,
+        summary: modelResult.summary ?? "updated (via Claude)",
+        matched: true,
+        limitation: modelResult.limitation ?? undefined,
+        backgroundImagePrompt: modelResult.backgroundImagePrompt,
+      }),
+    );
   }
 
   if (modelResult.status === "ok" || modelResult.status === "invalid") {
     const escalated = await callModel(trimmed, current, ESCALATION_MODEL);
     if (escalated.status === "ok" && !specsEqual(escalated.spec, current)) {
-      return await resolveBackgroundImage({
-        spec: escalated.spec,
-        summary: escalated.summary ?? "updated (via Claude, escalated)",
-        matched: true,
-        limitation: escalated.limitation ?? undefined,
-        backgroundImagePrompt: escalated.backgroundImagePrompt,
-      });
+      return await validateCustomComponents(
+        await resolveBackgroundImage({
+          spec: escalated.spec,
+          summary: escalated.summary ?? "updated (via Claude, escalated)",
+          matched: true,
+          limitation: escalated.limitation ?? undefined,
+          backgroundImagePrompt: escalated.backgroundImagePrompt,
+        }),
+      );
     }
     const errorText =
       escalated.status === "invalid"
