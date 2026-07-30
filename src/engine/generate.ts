@@ -626,7 +626,12 @@ export function buildSystemPrompt(): string {
     "",
     '1. `customCSS` — an object keyed by zone: "bubbleOutgoing", "bubbleIncoming", "background", "header". Each zone\'s value is an object of real CSS properties in camelCase (React inline-style syntax, e.g. "backgroundColor", "clipPath", "boxShadow", "border", "filter", "animation"), with plain string values. This is how you do things tokens can\'t: glows, custom borders beyond the border tokens, textured backgrounds, unusual shapes, etc. These merge on TOP of the theme tokens — you don\'t need to also set the token version of something you\'re overriding here.',
     '2. `customCSSText` — a string of raw CSS, injected verbatim in a <style> tag. This is the ONLY place `@keyframes` can be defined. If you want an animated bubble (pulse, wobble, wiggle), define the `@keyframes` here and reference the animation by name in customCSS\'s `animation` property for the relevant zone.',
-    '3. `customEffects` — an object with optional keys "onMessageReceived", "onMessageSent", "onReaction", each a STRING of plain JavaScript (a function body, not a full function). It runs once whenever that event fires, with one variable available: `container`, a real DOM element positioned over the whole chat. Use plain DOM APIs (document.createElement, container.appendChild, style properties, setTimeout to clean up) to build one-shot effects — confetti bursts, floating emoji, screen flashes, particle pops. Always remove anything you create (e.g. via setTimeout) so effects don\'t pile up. Example onMessageReceived value: "for (let i = 0; i < 20; i++) { const p = document.createElement(\'div\'); p.textContent = \'🎉\'; p.style.position = \'absolute\'; p.style.left = Math.random()*100 + \'%\'; p.style.top = \'-20px\'; p.style.fontSize = \'20px\'; p.style.transition = \'transform 1.2s ease-in, opacity 1.2s\'; container.appendChild(p); requestAnimationFrame(() => { p.style.transform = \'translateY(300px)\'; p.style.opacity = \'0\'; }); setTimeout(() => p.remove(), 1300); }"',
+    '3. `customEffects` — an object with optional keys "onLoad", "onMessageReceived", "onMessageSent", "onReaction", each a STRING of plain JavaScript (a function body, not a full function), with one variable available: `container`, a real DOM element positioned over the whole chat. ALWAYS use `container.appendChild(...)` — never `document.body.appendChild(...)`, which escapes the chat entirely and can render outside the visible chat panel where it\'s easy to miss or looks broken.',
+    "   - `onMessageReceived`/`onMessageSent`/`onReaction` are ONE-SHOT: the code runs once when that specific event happens, then should clean up after itself (setTimeout to remove what it created). Use these for something tied to an event — confetti on receive, a flash on reaction. These do NOT run continuously and do NOT run immediately when applied — only the next time that event actually occurs.",
+    '   - `onLoad` is DIFFERENT: it runs ONCE, immediately, when the change is applied (not tied to any message/reaction event) — use this for anything AMBIENT, CONTINUOUS, or PERSISTENT ("slithers around the screen", "floats around continuously", "always drifting", anything with no natural end). The code should create its element(s) once and set up an INFINITE CSS animation (`animation-iteration-count: infinite`, or omit the count in a shorthand that already implies it, e.g. reference an `@keyframes` in `customCSSText` with `animation: name 8s linear infinite`) so it keeps running on its own — do NOT setTimeout-remove it, and do NOT try to make an infinite effect out of onMessageReceived/onMessageSent/onReaction, since those only fire when that specific event happens, not continuously.',
+    "   - Getting this distinction right matters: a request for continuous/ambient motion mapped onto a message-triggered event will falsely report success while only ever appearing right after that event fires, which reads as \"nothing happened\" the rest of the time — always prefer onLoad for anything described as ongoing, moving on its own, or without a clear one-time trigger.",
+    '   - Example onLoad value for "a small snake that continuously slithers across the screen" (paired with `customCSSText` defining `@keyframes slither {...}`): "const snake = document.createElement(\'div\'); snake.textContent = \'🐍\'; snake.style.position = \'absolute\'; snake.style.fontSize = \'24px\'; snake.style.animation = \'slither 8s linear infinite\'; container.appendChild(snake);"',
+    '   - Example onMessageReceived value (one-shot, event-triggered): "for (let i = 0; i < 20; i++) { const p = document.createElement(\'div\'); p.textContent = \'🎉\'; p.style.position = \'absolute\'; p.style.left = Math.random()*100 + \'%\'; p.style.top = \'-20px\'; p.style.fontSize = \'20px\'; p.style.transition = \'transform 1.2s ease-in, opacity 1.2s\'; container.appendChild(p); requestAnimationFrame(() => { p.style.transform = \'translateY(300px)\'; p.style.opacity = \'0\'; }); setTimeout(() => p.remove(), 1300); }"',
     '4. `customComponents` — a whole new INTERACTIVE widget, for requests the other hatches can\'t reach because they need real state/behavior, not just style or a one-shot effect: a countdown timer, a small calculator, a mini game, anything with its own ongoing UI. An array of up to 5 objects: {"id": <short stable slug, e.g. "countdown-timer">, "label": <short human name shown if it errors, e.g. "Countdown Timer">, "slot": "composerActions"|"headerActions"|"standalone", "code": <string, see contract below>}.',
     "   - CODE CONTRACT (strict — anything else fails to compile): the string must define EXACTLY one top-level `function Component(props) { ... }` using JSX to return its UI, and nothing else — no import/export statements, no code outside that one function. React and the hooks useState/useEffect/useRef are already in scope — call them directly (`useState(0)`, not `React.useState(0)`).",
     '   - `props` gives you: `messages` (the current message list, read-only), `viewerId` (string), `sendMessage(text)` (a function — call it to send a real message into the chat, e.g. for a timer that announces when it hits zero).',
@@ -643,7 +648,7 @@ export function buildSystemPrompt(): string {
     "Use the token list for anything it already covers (colors, fonts, corner style, tail, borders, backgrounds) — it's simpler and cheaper. Reach for the escape hatches only when the request genuinely needs a shape, glow, animation, one-shot effect, or real interactive widget the tokens don't have a slot for — and prefer the SIMPLEST hatch that satisfies the request (customCSS over customEffects over customComponents). Leave customCSS zones/customCSSText/customEffects keys/customComponents you're not touching as empty/null/unchanged rather than guessing values for them.",
     "",
     "The full spec shape is:",
-    '{"version":1,"theme":{...all 20 tokens...},"slots":{"messageActions":[],"composerActions":[],"headerActions":[]},"customCSSText":"","customCSS":{"bubbleOutgoing":{},"bubbleIncoming":{},"background":{},"header":{}},"customEffects":{"onMessageReceived":null,"onMessageSent":null,"onReaction":null},"customComponents":[]}',
+    '{"version":1,"theme":{...all 20 tokens...},"slots":{"messageActions":[],"composerActions":[],"headerActions":[]},"customCSSText":"","customCSS":{"bubbleOutgoing":{},"bubbleIncoming":{},"background":{},"header":{}},"customEffects":{"onLoad":null,"onMessageReceived":null,"onMessageSent":null,"onReaction":null},"customComponents":[]}',
     "",
     "Start from the current spec the user provides, apply the instruction, and keep everything else unchanged.",
     "",
@@ -809,6 +814,27 @@ async function validateCustomComponents(result: GenerateResult): Promise<Generat
   return { ...result, limitation: [result.limitation, ...failures].filter(Boolean).join(" ") };
 }
 
+// Syntax-only check (not a smoke test — customEffects are plain event
+// handlers, not something safely callable without a real container/DOM
+// side effects) before claiming success, same principle as
+// validateCustomComponents: a broken effect should show up as a limitation,
+// not a silent console.warn the first time it actually runs.
+function validateCustomEffectsSyntax(result: GenerateResult): GenerateResult {
+  const failures: string[] = [];
+  for (const [event, code] of Object.entries(result.spec.customEffects)) {
+    if (!code) continue;
+    try {
+      // eslint-disable-next-line no-new-func
+      new Function("container", code);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      failures.push(`the "${event}" effect has a syntax error (${reason}) and won't run.`);
+    }
+  }
+  if (failures.length === 0) return result;
+  return { ...result, limitation: [result.limitation, ...failures].filter(Boolean).join(" ") };
+}
+
 // The free, instant fast path in isolation: returns a spec only when the keyword
 // stub fully and unambiguously understood the instruction. The orchestrator uses
 // this to short-circuit common theme edits before ever calling the router, so a
@@ -860,28 +886,32 @@ export async function generateSpec(
   // and, if that also comes back empty, tell the user plainly rather than
   // reporting a false "updated" when nothing visibly changed.
   if (modelResult.status === "ok" && !specsEqual(modelResult.spec, current)) {
-    return await validateCustomComponents(
-      await resolveBackgroundImage({
-        spec: modelResult.spec,
-        summary: modelResult.summary ?? "updated (via Claude)",
-        matched: true,
-        limitation: modelResult.limitation ?? undefined,
-        backgroundImagePrompt: modelResult.backgroundImagePrompt,
-      }),
+    return validateCustomEffectsSyntax(
+      await validateCustomComponents(
+        await resolveBackgroundImage({
+          spec: modelResult.spec,
+          summary: modelResult.summary ?? "updated (via Claude)",
+          matched: true,
+          limitation: modelResult.limitation ?? undefined,
+          backgroundImagePrompt: modelResult.backgroundImagePrompt,
+        }),
+      ),
     );
   }
 
   if (modelResult.status === "ok" || modelResult.status === "invalid") {
     const escalated = await callModel(trimmed, current, ESCALATION_MODEL);
     if (escalated.status === "ok" && !specsEqual(escalated.spec, current)) {
-      return await validateCustomComponents(
-        await resolveBackgroundImage({
-          spec: escalated.spec,
-          summary: escalated.summary ?? "updated (via Claude, escalated)",
-          matched: true,
-          limitation: escalated.limitation ?? undefined,
-          backgroundImagePrompt: escalated.backgroundImagePrompt,
-        }),
+      return validateCustomEffectsSyntax(
+        await validateCustomComponents(
+          await resolveBackgroundImage({
+            spec: escalated.spec,
+            summary: escalated.summary ?? "updated (via Claude, escalated)",
+            matched: true,
+            limitation: escalated.limitation ?? undefined,
+            backgroundImagePrompt: escalated.backgroundImagePrompt,
+          }),
+        ),
       );
     }
     const errorText =

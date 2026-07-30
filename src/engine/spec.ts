@@ -155,12 +155,20 @@ export const CustomCssSchema = z
   .partial()
   .default({});
 
-// Events a custom effect can bind to.
-export const CUSTOM_EFFECT_EVENTS = ["onMessageReceived", "onMessageSent", "onReaction"] as const;
+// Events a custom effect can bind to. onLoad is different in kind from the
+// other three: it fires once (when the spec is applied / the chat mounts),
+// not per-message — the intended use is setting up its OWN infinite CSS
+// animation so it keeps running without being re-triggered. Added after a
+// real gap: a request for a "continuously slithering" decoration got mapped
+// onto onMessageReceived (a one-shot, message-triggered effect) because
+// that's all that existed, so it only ever appeared right after an incoming
+// message — never persistently, which is what was actually asked for.
+export const CUSTOM_EFFECT_EVENTS = ["onLoad", "onMessageReceived", "onMessageSent", "onReaction"] as const;
 export type CustomEffectEvent = (typeof CUSTOM_EFFECT_EVENTS)[number];
 
 export const CustomEffectsSchema = z
   .object({
+    onLoad: z.string().max(4000).nullable(),
     onMessageReceived: z.string().max(4000).nullable(),
     onMessageSent: z.string().max(4000).nullable(),
     onReaction: z.string().max(4000).nullable(),

@@ -62,6 +62,22 @@ export function Chat({
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // Ambient/persistent decorations (e.g. "a snake that continuously
+  // slithers around") — unlike the message/reaction effects below, this
+  // fires once when its code is set, not per-event, and the code is
+  // expected to set up its own infinite CSS animation so it keeps running
+  // without being re-triggered. Re-fires only when the onLoad code itself
+  // changes (a new instruction replacing the ambient effect), not on every
+  // unrelated re-render — clearing the layer first so the old ambient
+  // effect doesn't linger alongside a new one.
+  useEffect(() => {
+    const code = spec.customEffects.onLoad;
+    const container = effectLayerRef.current;
+    if (!code || !container) return;
+    container.innerHTML = "";
+    runEffect(code, container);
+  }, [spec.customEffects.onLoad]);
+
   const customComponentsFor = (slot: Spec["customComponents"][number]["slot"]) =>
     spec.customComponents
       .filter((c) => c.slot === slot)
