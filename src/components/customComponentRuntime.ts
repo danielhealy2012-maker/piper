@@ -45,7 +45,16 @@ export function compileCustomComponent(
 
   let transformed: string;
   try {
-    transformed = babel.transform(cleaned, { presets: ["react"] }).code ?? "";
+    // runtime: "classic" is required, not optional — this project's
+    // @babel/standalone is v8, where preset-react defaults to the
+    // "automatic" JSX runtime (emits calls to an `_jsx` helper it expects to
+    // import from "react/jsx-runtime"). We provide React itself as a plain
+    // argument below, not a module the compiled code can import from, so
+    // automatic-runtime output would reference an undefined `_jsx` and throw
+    // — not at compile time (the transform succeeds either way), only when
+    // the component actually renders. Forcing "classic" guarantees
+    // React.createElement calls instead, matching what's actually provided.
+    transformed = babel.transform(cleaned, { presets: [["react", { runtime: "classic" }]] }).code ?? "";
   } catch (err) {
     throw new Error(`couldn't parse component code: ${err instanceof Error ? err.message : String(err)}`);
   }

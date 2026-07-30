@@ -772,20 +772,34 @@ async function resolveBackgroundImage(result: GenerateResult & { backgroundImage
 // what keeps Babel out of the base bundle for anyone who never uses this).
 // But that means the orchestrator would otherwise report "success" the
 // instant it gets a valid, DIFFERENT spec back — with no idea whether the
-// component's code will actually compile. Runs the exact same compiler here,
-// before claiming success, so a broken component shows up as a limitation
-// (amber notice) instead of a false green checkmark. Only loads Babel when
-// there's actually a component to check.
+// component's code will actually compile AND render. Runs the exact same
+// compiler here, before claiming success, so a broken component shows up as
+// a limitation (amber notice) instead of a false green checkmark. Only loads
+// Babel/react-dom-server when there's actually a component to check.
+//
+// Compiling alone isn't enough — it only proves the code is syntactically
+// valid, not that it runs. (Concretely: this is how a Babel-version JSX
+// runtime mismatch slipped through once already — the transform succeeded,
+// the function reference was constructed fine, and it only threw when
+// actually invoked during render.) renderToStaticMarkup smoke-tests an
+// actual invocation without mounting it into the live UI or running
+// useEffect (which only fires post-mount in real DOM rendering, so this
+// can't trigger side effects like starting a timer or sending a message).
 async function validateCustomComponents(result: GenerateResult): Promise<GenerateResult> {
   if (result.spec.customComponents.length === 0) return result;
-  const [{ compileCustomComponent }, babel] = await Promise.all([
+  const [{ compileCustomComponent }, babel, React, ReactDOMServer] = await Promise.all([
     import("../components/customComponentRuntime"),
     import("@babel/standalone"),
+    import("react"),
+    import("react-dom/server"),
   ]);
   const failures: string[] = [];
   for (const c of result.spec.customComponents) {
     try {
-      compileCustomComponent(babel, c.code);
+      const Comp = compileCustomComponent(babel, c.code);
+      ReactDOMServer.renderToStaticMarkup(
+        React.createElement(Comp, { messages: [], viewerId: "", sendMessage: () => {} }),
+      );
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       failures.push(`"${c.label}" couldn't be built (${reason}) — use its ✕ to remove it.`);
