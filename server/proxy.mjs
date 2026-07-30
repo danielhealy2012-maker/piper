@@ -82,7 +82,10 @@ const server = http.createServer(async (req, res) => {
       // one that doesn't 400s. extractJson() finds the JSON regardless.
       const response = await client.messages.create({
         model: chosenModel,
-        max_tokens: 1500,
+        // See api/generate.js: the full spec (including any customComponents
+        // source code) is echoed back every request, and 1500 silently
+        // truncated mid-JSON once escape hatches were in heavy use.
+        max_tokens: 8000,
         system,
         messages: [
           {

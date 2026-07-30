@@ -19,7 +19,14 @@ export default async function handler(req, res) {
     // wherever it lands in the response, prefixed or not.
     const response = await anthropic.messages.create({
       model: chosenModel,
-      max_tokens: 1500,
+      // The full spec (theme + customCSSText/customCSS/customEffects/
+      // customComponents, all echoed back on every request, including any
+      // real component source code) can genuinely be a few thousand tokens
+      // once a session has accumulated a few of these — 1500 was fine for a
+      // bare theme spec but silently truncated mid-JSON as soon as escape
+      // hatches were in heavy use, which is a much worse failure than the
+      // extra cost of headroom here.
+      max_tokens: 8000,
       system,
       messages: [
         {
