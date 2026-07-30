@@ -171,6 +171,26 @@ export const CustomEffectsSchema = z
 export type CustomCss = z.infer<typeof CustomCssSchema>;
 export type CustomEffects = z.infer<typeof CustomEffectsSchema>;
 
+// Net-new interactive UI, one tier further than customCSS/customEffects: a
+// whole React component, not just a style or a one-shot handler. Same
+// unvalidated-content trust posture (compiled and rendered, never inspected
+// for safety) but a materially different failure mode — a bad component can
+// misbehave for as long as it stays mounted (a leaked interval, a bad render
+// loop), not just once. The `id` is what makes removal reliable: the client
+// always offers a direct, model-independent "remove this" affordance (see
+// CustomComponentRenderer.tsx) rather than depending on a future prompt
+// correctly identifying which component to drop.
+export const CUSTOM_COMPONENT_SLOTS = ["composerActions", "headerActions", "standalone"] as const;
+export type CustomComponentSlot = (typeof CUSTOM_COMPONENT_SLOTS)[number];
+
+export const CustomComponentSchema = z.object({
+  id: z.string().min(1).max(40),
+  label: z.string().min(1).max(60),
+  slot: z.enum(CUSTOM_COMPONENT_SLOTS),
+  code: z.string().min(1).max(3000),
+});
+export type CustomComponent = z.infer<typeof CustomComponentSchema>;
+
 export const SpecSchema = z.object({
   version: z.literal(1),
   theme: ThemeSchema,
@@ -180,6 +200,10 @@ export const SpecSchema = z.object({
   customCSSText: z.string().max(4000).default(""),
   customCSS: CustomCssSchema,
   customEffects: CustomEffectsSchema,
+  // Capped at 5: these are re-sent as full source in every theme-generation
+  // request (same as customCSS/customEffects), so this bounds both prompt
+  // cost and how many independently-misbehaving widgets can accumulate.
+  customComponents: z.array(CustomComponentSchema).max(5).default([]),
 });
 
 export type Spec = z.infer<typeof SpecSchema>;
@@ -224,6 +248,7 @@ export const DEFAULT_SPEC: Spec = {
   customCSSText: "",
   customCSS: {},
   customEffects: {},
+  customComponents: [],
 };
 
 export type ValidateResult = { ok: true; spec: Spec } | { ok: false; error: string };

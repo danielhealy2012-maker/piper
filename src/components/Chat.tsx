@@ -5,6 +5,7 @@ import type { DisplayUser } from "../lib/backend";
 import { renderAction, type TranslationEntry } from "./slots";
 import { bubbleStyle, fontStack, isDarkWallpaper, rowGap, sentimentColor, wallpaperStyle } from "./theme";
 import { runEffect } from "./effects";
+import { CustomComponentSlot } from "./CustomComponentSlot";
 
 const SEND_ICONS: Record<Spec["theme"]["sendButtonStyle"], string> = {
   arrow: "↑",
@@ -25,9 +26,21 @@ export interface ChatProps {
   starredMessageIds?: Set<string>;
   onSend: (text: string) => void;
   onTranslate: (messageId: string, target: string) => void;
+  onRemoveCustomComponent?: (id: string) => void;
 }
 
-export function Chat({ spec, messages, viewerId, users, translations, pinnedMessageIds, starredMessageIds, onSend, onTranslate }: ChatProps) {
+export function Chat({
+  spec,
+  messages,
+  viewerId,
+  users,
+  translations,
+  pinnedMessageIds,
+  starredMessageIds,
+  onSend,
+  onTranslate,
+  onRemoveCustomComponent,
+}: ChatProps) {
   const [draft, setDraft] = useState("");
   const theme = spec.theme;
   // `users` is empty on first render while the backend loads (and a brand-new
@@ -48,6 +61,20 @@ export function Chat({ spec, messages, viewerId, users, translations, pinnedMess
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  const customComponentsFor = (slot: Spec["customComponents"][number]["slot"]) =>
+    spec.customComponents
+      .filter((c) => c.slot === slot)
+      .map((c) => (
+        <CustomComponentSlot
+          key={c.id}
+          spec={c}
+          messages={messages}
+          viewerId={viewerId}
+          sendMessage={onSend}
+          onRemove={(id) => onRemoveCustomComponent?.(id)}
+        />
+      ));
 
   // Fire custom effects (model-generated JS) when a message shows up, keyed
   // off id so a refetch of the same messages doesn't re-trigger anything.
@@ -104,8 +131,15 @@ export function Chat({ spec, messages, viewerId, users, translations, pinnedMess
         </div>
         <div className="flex items-center gap-1.5">
           {spec.slots.headerActions.map((action, i) => renderAction(action, i, { draft, setDraft }))}
+          {customComponentsFor("headerActions")}
         </div>
       </header>
+
+      {spec.customComponents.some((c) => c.slot === "standalone") ? (
+        <div className="flex flex-wrap items-center gap-1.5 border-b border-black/10 bg-black/[0.02] px-3 py-1.5">
+          {customComponentsFor("standalone")}
+        </div>
+      ) : null}
 
       <div
         className="flex flex-1 flex-col overflow-y-auto px-3 py-3"
@@ -206,9 +240,10 @@ export function Chat({ spec, messages, viewerId, users, translations, pinnedMess
       </div>
 
       <div className="border-t border-black/10 bg-white px-3 py-2">
-        {spec.slots.composerActions.length > 0 ? (
+        {spec.slots.composerActions.length > 0 || spec.customComponents.some((c) => c.slot === "composerActions") ? (
           <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
             {spec.slots.composerActions.map((action, i) => renderAction(action, i, { draft, setDraft }))}
+            {customComponentsFor("composerActions")}
           </div>
         ) : null}
         <form

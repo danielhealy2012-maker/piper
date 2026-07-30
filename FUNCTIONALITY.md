@@ -1,6 +1,6 @@
 # Piper — Functionality Matrix
 
-**Last updated:** 2026-07-27  
+**Last updated:** 2026-07-29  
 **Current Phase:** Phase 1 (Multiplayer foundation) + real image generation (Phase 2 item, done early)
 
 ---
@@ -24,6 +24,7 @@
 | Pattern overlays | ✅ | dots, grid, stripes, checks, crosshatch |
 | Custom CSS / animations | ✅ | Free-form CSS per zone + `@keyframes`, for anything tokens can't express (shapes, glows) |
 | Custom one-shot effects | ✅ | Model-authored JS run on message/reaction events (confetti, flashes, etc.) |
+| **Custom interactive components** | ✅ | Model authors a whole React component (countdown timer, calculator, mini widget), compiled at runtime with `@babel/standalone`. Always removable via a direct ✕ button, independent of the model |
 
 ### Message Operations (Shared State)
 

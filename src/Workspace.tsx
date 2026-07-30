@@ -134,6 +134,14 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
     await refresh();
   }
 
+  // The guaranteed, model-independent way to get rid of a misbehaving custom
+  // component — see CustomComponentSlot.tsx. Never blocked on a model call.
+  async function removeCustomComponent(id: string) {
+    const previous = spec;
+    const next = { ...spec, customComponents: spec.customComponents.filter((c) => c.id !== id) };
+    await applyTheme(next, previous);
+  }
+
   async function handleTranslate(messageId: string, target: string) {
     const current = translations[messageId];
     if (current?.status === "loading") return;
@@ -745,6 +753,7 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
             starredMessageIds={starredMessageIds}
             onSend={(t) => void handleSend(t)}
             onTranslate={(id, target) => void handleTranslate(id, target)}
+            onRemoveCustomComponent={(id) => void removeCustomComponent(id)}
           />
         </div>
       </div>

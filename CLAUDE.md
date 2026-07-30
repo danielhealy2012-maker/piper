@@ -49,12 +49,31 @@ no dynamic import. There are two catalogs:
 1. **Theme spec** (`registry.ts` → `spec.ts` `validateSpec` → `slots.tsx` `renderAction` → DOM).
    Controls appearance. `validateSpec` is the only path to the themed DOM and runs on stub
    output, model output, AND localStorage-rehydrated specs (`persist.ts` distrusts old specs).
-   Two escape hatches for anything the fixed 20-odd tokens can't express: `customCSS` (free-form
-   CSS properties per zone — bubbleOutgoing/bubbleIncoming/background/header) and
+   Three escape hatches for anything the fixed 20-odd tokens can't express: `customCSS`
+   (free-form CSS properties per zone — bubbleOutgoing/bubbleIncoming/background/header),
    `customEffects` (JS source compiled with `new Function` and run against a container node on
-   message/reaction events). See `engine/legibility.ts`'s `enforceLegibility()` — a
-   post-processing pass that corrects low-contrast text and un-padded shape clips the model
-   generates, since prompting alone doesn't reliably prevent those.
+   message/reaction events), and `customComponents` (a whole model-authored React component —
+   real interactive widgets like a countdown timer or calculator, not just style/one-shot
+   behavior). See `engine/legibility.ts`'s `enforceLegibility()` — a post-processing pass that
+   corrects low-contrast text and un-padded shape clips the model generates, since prompting
+   alone doesn't reliably prevent those.
+   - **`customComponents`** (`components/customComponentRuntime.ts` + `CustomComponentSlot.tsx`):
+     each entry is `{id, label, slot, code}`. `code` must be exactly one
+     `function Component(props) {...}` using JSX — no import/export. Compiled at runtime with
+     `@babel/standalone` (lazy-loaded via dynamic `import()`, so it never touches the base bundle
+     for anyone who doesn't use this) into a real component via `new Function`, given `React` +
+     `useState`/`useEffect`/`useRef` as call arguments (not lexical imports) so hook rules still
+     hold when React itself renders it. `props` exposes `messages`, `viewerId`,
+     `sendMessage(text)`. Mounts in one of three zones: `composerActions`/`headerActions` (small,
+     pill-shaped) or `standalone` (its own full-width strip, for something bigger). Wrapped in a
+     per-component React error boundary so a render-time crash kills only that widget. Every
+     instance ALWAYS shows a "✕" that removes it via `Workspace.tsx`'s `removeCustomComponent()`
+     — a direct, model-independent way out, since unlike a one-shot `customEffect`, a bad
+     component can misbehave for as long as it stays mounted (leaked interval, bad render loop)
+     and there's no realistic way to sandbox against that without a Worker + hard kill, which
+     isn't implemented. This is the same "worst case breaks the app, not the machine" trust
+     posture as the other two hatches, explicitly confirmed by the user as extending to full
+     component code, not just styling/one-shot effects.
 2. **Action plan** (`actions.ts` → `PlanSchema`/`validatePlan` → `Workspace.tsx`'s
    `runInstruction`). Controls conversation content. The router picks typed actions,
    `validatePlan` gates them, and `runInstruction` executes each by calling the current
