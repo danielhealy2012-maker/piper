@@ -152,7 +152,10 @@ export function Chat({
       </header>
 
       {spec.customComponents.some((c) => c.slot === "standalone") ? (
-        <div className="flex flex-wrap items-center gap-1.5 border-b border-black/10 bg-black/[0.02] px-3 py-1.5">
+        // Capped height so a large/badly-sized generated component (a full
+        // game board, a canvas) can't squeeze the actual message list out of
+        // the fixed-height chat panel — it scrolls internally instead.
+        <div className="flex max-h-[240px] flex-wrap items-center gap-1.5 overflow-y-auto border-b border-black/10 bg-black/[0.02] px-3 py-1.5">
           {customComponentsFor("standalone")}
         </div>
       ) : null}

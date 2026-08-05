@@ -35,11 +35,15 @@ class ComponentErrorBoundary extends ReactClassComponent<
 }
 
 /**
- * Renders one model-authored custom component. Always shows a small ✕ next
- * to it regardless of whether it's currently working or broken — the
- * guaranteed, model-independent way out of a bad component, since unlike a
- * one-shot customEffect, a bad component can misbehave for as long as it
- * stays mounted.
+ * Renders one model-authored custom component. Always shows a small ✕
+ * regardless of whether it's currently working or broken — the guaranteed,
+ * model-independent way out of a bad component, since unlike a one-shot
+ * customEffect, a bad component can misbehave for as long as it stays
+ * mounted. The ✕ is an absolutely-positioned corner badge, not a flex
+ * sibling of the component's content — a component that renders something
+ * large or uses its own absolute/fixed positioning internally could
+ * otherwise cover or displace a same-flow button, which is exactly what
+ * made a generated widget briefly unremovable in practice.
  */
 export function CustomComponentSlot({ spec, messages, viewerId, sendMessage, onRemove }: Props) {
   const babel = useBabel();
@@ -56,7 +60,7 @@ export function CustomComponentSlot({ spec, messages, viewerId, sendMessage, onR
   }, [babel, spec.code]);
 
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-white/80 px-2 py-0.5 shadow-sm backdrop-blur-sm">
+    <span className="relative inline-flex max-w-full items-center rounded-full bg-white/80 py-0.5 pl-2 pr-5 shadow-sm backdrop-blur-sm">
       {!result ? (
         <span className="text-[11px] text-black/40">loading "{spec.label}"…</span>
       ) : result.kind === "error" ? (
@@ -72,7 +76,7 @@ export function CustomComponentSlot({ spec, messages, viewerId, sendMessage, onR
         type="button"
         onClick={() => onRemove(spec.id)}
         title={`Remove "${spec.label}"`}
-        className="text-[10px] text-black/30 hover:text-red-500"
+        className="absolute right-0.5 top-0.5 z-50 flex h-4 w-4 items-center justify-center rounded-full bg-white text-[10px] text-black/50 shadow ring-1 ring-black/10 hover:text-red-500"
       >
         ✕
       </button>
