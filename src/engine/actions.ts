@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { ChatMessage } from "../lib/types";
 import type { DisplayUser } from "../lib/backend";
+import { GENRES, GENRE_NAMES } from "./genres";
 
 // ---------------------------------------------------------------------------
 // The action catalog. This is the bounded vocabulary the router may choose
@@ -124,12 +125,24 @@ export function validatePlan(candidate: unknown): ValidatePlanResult {
 // ---------------------------------------------------------------------------
 
 export function buildRouterPrompt(): string {
+  // Generated from the shared genre catalog rather than hand-written here.
+  // The router rejecting a capability that actually exists is this codebase's
+  // most-repeated bug ("insert a timer" and "add a tic-tac-toe game" both came
+  // back as "Piper can't do that" while the engine could build them), and it
+  // happened because this list was a separate copy that had to be remembered
+  // whenever a capability shipped. Adding a genre to genres.ts now updates
+  // this prompt automatically, and scripts/check-prompts.mjs fails if a genre
+  // ever stops being represented here.
+  const capabilityLines = GENRE_NAMES.map((name) => `   - ${GENRES[name].routerHint}`);
+
   return [
     "You are the planner for Piper, an iMessage-style chat app. You read a user instruction, the current chat state, and output a JSON plan — or explain why it can't be done.",
     "",
     "THREE kinds of changes you can make:",
     "",
-    "1. APPEARANCE — theme/UI/visual effects/INTERACTIVE WIDGETS via `themeInstruction` (a plain-language request, passed through close to verbatim so the theming engine sees the full intent). This covers colors, fonts, backgrounds, bubble shapes/borders/glows, animations or one-shot effects triggered by events (\"pop confetti when I receive a message\", \"flash the screen on a reaction\", \"make my bubbles pulse\"), AND genuinely interactive widgets with their own state/behavior — timers, counters, calculators, mini-games (including things like tic-tac-toe), anything with ongoing UI. ALL of this is appearance, routed the same way, INCLUDING requests phrased as games, tools, or \"embedding\" something — Piper's theming engine can actually build these as real interactive components; never reject a widget/game/timer/tool request as \"not supported\" or \"no embedding capability\" — that capability exists. This also covers REMOVING or MODIFYING something already added this way (\"delete the tic-tac-toe game\", \"remove the timer\") — the theming engine sees the current state and handles this even though you (the router) don't have visibility into exactly what's currently there; forward it as themeInstruction rather than guessing it doesn't exist. Or explicit theme mutations: `themeMutation: 'reset'` or `'randomize'`. Leave both null only if the request has no appearance part at all.",
+    "1. APPEARANCE — theme/UI/visual effects/INTERACTIVE WIDGETS via `themeInstruction` (a plain-language request, passed through close to verbatim so the theming engine sees the full intent). This covers the plain theme (colors, fonts, backgrounds, bubble size/shape, density, avatars, timestamps) AND all of the following, every one of which Piper can genuinely build:",
+    ...capabilityLines,
+    "   ALL of it is routed the same way, INCLUDING requests phrased as games, tools, or \"embedding\" something. Never reject a widget/game/timer/tool/effect request as \"not supported\" or \"no embedding capability\" — that capability exists. This also covers REMOVING or MODIFYING something already added this way (\"delete the tic-tac-toe game\", \"remove the timer\") — the theming engine sees the current state and handles this even though you (the router) don't have visibility into exactly what's currently there; forward it as themeInstruction rather than guessing it doesn't exist. Or explicit theme mutations: `themeMutation: 'reset'` or `'randomize'`. Leave both null only if the request has no appearance part at all.",
     "",
     "2. CONVERSATION — `conversationTitle` to rename, or `clearConversation: true` to delete all messages.",
     "",

@@ -6,7 +6,7 @@ import {
   validatePlan,
   type Plan,
 } from "./actions";
-import { extractJson } from "./generate";
+import { extractJson } from "./json";
 import { apiPost } from "../lib/api";
 
 export type RouteResult =

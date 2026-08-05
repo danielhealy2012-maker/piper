@@ -10,6 +10,15 @@ import { DEFAULT_SPEC, specsEqual, validateSpec, type Action, type Spec } from "
 import { enforceLegibility } from "./legibility";
 import { apiPost } from "../lib/api";
 import { generateBackgroundImage } from "../lib/image";
+import { classifyInstruction, genresPresentInSpec } from "./classify";
+import { extractJson } from "./json";
+import {
+  GENRE_NAMES,
+  SPECIALIST_SECTIONS,
+  expandGenres,
+  hatchNamesFor,
+  type Genre,
+} from "./genres";
 
 export const ESCALATION_MODEL = "claude-opus-4-8";
 
@@ -567,7 +576,22 @@ type ModelResult =
   | { status: "invalid"; error: string }
   | { status: "unavailable" };
 
-export function buildSystemPrompt(): string {
+/**
+ * Stage 2 of the theme pipeline: the specialist prompt.
+ *
+ * `active` is the genre set from the stage-1 classifier (see classify.ts),
+ * unioned with whatever the current spec already uses. Only those mechanisms'
+ * instruction blocks are included — a plain "make my bubbles green" no longer
+ * carries the component code contract, the effects examples, and the image
+ * generation rules it will never use.
+ *
+ * Passing null (or nothing) restores the old every-mechanism mega-prompt. That
+ * is the deliberate fallback for a failed classifier call and for the
+ * escalation retry, so a misclassification degrades to "as good as before"
+ * rather than to "can't do it".
+ */
+export function buildSystemPrompt(genres?: Set<Genre> | null): string {
+  const active = genres ?? new Set<Genre>(GENRE_NAMES);
   const tokenLines = Object.entries(THEME_TOKENS).map(([name, desc]) => {
     let constraint: string;
     switch (desc.kind) {
@@ -594,6 +618,40 @@ export function buildSystemPrompt(): string {
     (slot) => `- ${slot} — ${SLOTS[slot].label}. Allowed components: ${SLOTS[slot].allow.join(", ")}.`,
   );
 
+  const sectionsFor = (at: "hatches" | "tail") =>
+    SPECIALIST_SECTIONS.filter((s) => s.at === at && s.needs.some((n) => active.has(n)));
+
+  // The hatch list is numbered for the model's benefit, but WHICH hatches are
+  // present varies per request now — so number them at assembly time rather
+  // than hardcoding "1./2./3./4." into text that may not all be there.
+  const hatchLines = sectionsFor("hatches").flatMap((section, i) =>
+    section.build(active).map((line, j) => (j === 0 ? `${i + 1}. ${line}` : line)),
+  );
+
+  const hatchBlock =
+    hatchLines.length > 0
+      ? [
+          "",
+          "ESCAPE HATCHES — for the parts of this request the token list above can't express. Use these INSTEAD of forcing a request into a token that doesn't really fit.",
+          "",
+          ...hatchLines,
+        ]
+      : [];
+
+  // The envelope always carries this key so the client parser stays uniform,
+  // but when image generation isn't in play the model is told plainly that
+  // null is the only valid value — rather than left with a dangling reference
+  // to a section that wasn't included.
+  const backgroundImagePromptSpec = active.has("imageGeneration")
+    ? "<string|null — a generation prompt as described above, or null>"
+    : "null (always null for this request — image generation is not part of it)";
+
+  const hatchNames = hatchNamesFor(active);
+  const closingGuidance =
+    hatchNames.length > 0
+      ? `Use the token list for anything it already covers (colors, fonts, corner style, tail, borders, backgrounds) — it's simpler and cheaper. Reach for the escape hatches only where the request genuinely needs what they provide, and prefer the SIMPLEST one that satisfies it (${hatchNames.join(" over ")}). Leave any customCSS zones / customCSSText / customEffects keys / customComponents you're not touching as empty/null/unchanged rather than guessing values for them.`
+      : "This request has been assessed as expressible with the theme tokens above, so no escape-hatch mechanisms are described here. Leave customCSS, customCSSText, customEffects and customComponents exactly as they arrive in the current spec — echo them back byte-for-byte, never blank them out. If the request truly cannot be done with the tokens, say so in `limitation` rather than inventing a mechanism.";
+
   return [
     "You are the theming engine for Piper, an iMessage-style chat app that users reshape by typing instructions.",
     "You may ONLY select values from the registry below. Anything outside this surface (unknown component, out-of-range value, component in the wrong slot) is rejected by a validator, so do not invent theme tokens, components, or props.",
@@ -606,7 +664,7 @@ export function buildSystemPrompt(): string {
     '- wallpaper "gradient" -> paints a 3-stop gradient from gradientFrom via gradientVia to gradientTo, at gradientAngle degrees. Use this for "sunset fade", "blue to purple", any multi-color background. Pick genuinely pleasing stops.',
     '- wallpaper "image" -> paints the illustrated scene named in wallpaperImage. ONLY these 8 fixed scenes exist as pre-drawn art.',
     '- wallpaper "none"/"dots"/"grid"/"sunset"/"ocean"/"charcoal" -> legacy fixed presets.',
-    '- NOTE: "generated" is NOT a value you can set for `wallpaper` — it is reserved for the system to set automatically after a real image is generated (see IMAGE GENERATION below). Always pick one of the values above instead.',
+    '- NOTE: "generated" is NOT a value you can set for `wallpaper`, ever, and you never set `wallpaperUrl` either — both are reserved for the system to fill in on its own after a real image has been generated. Always pick one of the values above instead.',
     "- wallpaperPattern is a SEPARATE overlay drawn on top of whichever base is chosen, at patternOpacity strength. So \"blue background with stripes\" = wallpaper custom + wallpaperColor blue + wallpaperPattern stripes.",
     "",
     "Bind each part of the instruction to the thing it actually describes: in \"white background with blue bubbles\", white is the background and blue is bubbleColorOutgoing — do not collapse them into one change. Keep text readable against whatever bubble and background colors you choose.",
@@ -621,68 +679,41 @@ export function buildSystemPrompt(): string {
     '- ToneShifter: {"tones": [array from "formal","casual","warm","concise"]}',
     '- ThemeBadge: {"text": string, max 24 chars}',
     "",
-    "",
-    "ESCAPE HATCHES — for anything the token list above can't express (unusual shapes, glows, custom animations, effects on events, or a whole new interactive widget). Use these INSTEAD of forcing a request into a token that doesn't really fit.",
-    "",
-    '1. `customCSS` — an object keyed by zone: "bubbleOutgoing", "bubbleIncoming", "background", "header". Each zone\'s value is an object of real CSS properties in camelCase (React inline-style syntax, e.g. "backgroundColor", "clipPath", "boxShadow", "border", "filter", "animation"), with plain string values. This is how you do things tokens can\'t: glows, custom borders beyond the border tokens, textured backgrounds, unusual shapes, etc. These merge on TOP of the theme tokens — you don\'t need to also set the token version of something you\'re overriding here.',
-    '2. `customCSSText` — a string of raw CSS, injected verbatim in a <style> tag. This is the ONLY place `@keyframes` can be defined. If you want an animated bubble (pulse, wobble, wiggle), define the `@keyframes` here and reference the animation by name in customCSS\'s `animation` property for the relevant zone.',
-    '3. `customEffects` — an object with optional keys "onLoad", "onMessageReceived", "onMessageSent", "onReaction", each a STRING of plain JavaScript (a function body, not a full function), with one variable available: `container`, a real DOM element positioned over the whole chat. ALWAYS use `container.appendChild(...)` — never `document.body.appendChild(...)`, which escapes the chat entirely and can render outside the visible chat panel where it\'s easy to miss or looks broken.',
-    "   - `onMessageReceived`/`onMessageSent`/`onReaction` are ONE-SHOT: the code runs once when that specific event happens, then should clean up after itself (setTimeout to remove what it created). Use these for something tied to an event — confetti on receive, a flash on reaction. These do NOT run continuously and do NOT run immediately when applied — only the next time that event actually occurs.",
-    '   - `onLoad` is DIFFERENT: it runs ONCE, immediately, when the change is applied (not tied to any message/reaction event) — use this for anything AMBIENT, CONTINUOUS, or PERSISTENT ("slithers around the screen", "floats around continuously", "always drifting", anything with no natural end). The code should create its element(s) once and set up an INFINITE CSS animation (`animation-iteration-count: infinite`, or omit the count in a shorthand that already implies it, e.g. reference an `@keyframes` in `customCSSText` with `animation: name 8s linear infinite`) so it keeps running on its own — do NOT setTimeout-remove it, and do NOT try to make an infinite effect out of onMessageReceived/onMessageSent/onReaction, since those only fire when that specific event happens, not continuously.',
-    "   - Getting this distinction right matters: a request for continuous/ambient motion mapped onto a message-triggered event will falsely report success while only ever appearing right after that event fires, which reads as \"nothing happened\" the rest of the time — always prefer onLoad for anything described as ongoing, moving on its own, or without a clear one-time trigger.",
-    '   - Example onLoad value for "a small snake that continuously slithers across the screen" (paired with `customCSSText` defining `@keyframes slither {...}`): "const snake = document.createElement(\'div\'); snake.textContent = \'🐍\'; snake.style.position = \'absolute\'; snake.style.fontSize = \'24px\'; snake.style.animation = \'slither 8s linear infinite\'; container.appendChild(snake);"',
-    '   - Example onMessageReceived value (one-shot, event-triggered): "for (let i = 0; i < 20; i++) { const p = document.createElement(\'div\'); p.textContent = \'🎉\'; p.style.position = \'absolute\'; p.style.left = Math.random()*100 + \'%\'; p.style.top = \'-20px\'; p.style.fontSize = \'20px\'; p.style.transition = \'transform 1.2s ease-in, opacity 1.2s\'; container.appendChild(p); requestAnimationFrame(() => { p.style.transform = \'translateY(300px)\'; p.style.opacity = \'0\'; }); setTimeout(() => p.remove(), 1300); }"',
-    '4. `customComponents` — a whole new INTERACTIVE widget, for requests the other hatches can\'t reach because they need real state/behavior, not just style or a one-shot effect: a countdown timer, a small calculator, a mini game, anything with its own ongoing UI. An array of up to 5 objects: {"id": <short stable slug, e.g. "countdown-timer">, "label": <short human name shown if it errors, e.g. "Countdown Timer">, "slot": "composerActions"|"headerActions"|"standalone", "code": <string, see contract below>}.',
-    "   - CODE CONTRACT (strict — anything else fails to compile): the string must define EXACTLY one top-level `function Component(props) { ... }` using JSX to return its UI, and nothing else — no import/export statements, no code outside that one function. React and the hooks useState/useEffect/useRef are already in scope — call them directly (`useState(0)`, not `React.useState(0)`).",
-    '   - `props` gives you: `messages` (the current message list, read-only), `viewerId` (string), `sendMessage(text)` (a function — call it to send a real message into the chat, e.g. for a timer that announces when it hits zero).',
-    '   - Pick `slot` by size: "composerActions" or "headerActions" for something small and pill-shaped (a button, a live number); "standalone" for something that needs more room (a small canvas, a multi-button calculator) — it gets its own full-width strip.',
-    "   - Keep it robust: clean up every `setInterval`/`setTimeout` in a `useEffect` cleanup function so it doesn't run forever after the user moves on; avoid unbounded loops.",
-    "   - SIZE IS ENFORCED, not just a suggestion: \"standalone\" renders in a strip capped at 240px tall (scrolls internally past that) — never use `position: fixed` or a large explicit width/height inside your JSX, since that can visually cover the chat instead of sitting inside your allotted space. For a grid-based widget (tic-tac-toe, a small game board), keep each cell small (e.g. 32-40px) so the whole board comfortably fits well under the height cap — do not assume you have the whole screen.",
-    '   - To ADD one: include it in `customComponents` alongside any existing ones that should stay (you are given the current spec, including any that already exist — echo them back unchanged unless the instruction is about them specifically). To MODIFY one: keep its `id`, change what needs to change. To REMOVE one: simply leave it out of the array — but note the user ALSO has a direct "✕" button on every component that removes it instantly without needing you, so don\'t worry about being asked to remove something that may already be gone.',
-    '   - Example minimal `code` value for "add a 60 second countdown timer": "function Component({ sendMessage }) {\\n  const [seconds, setSeconds] = useState(60);\\n  useEffect(() => {\\n    if (seconds <= 0) { sendMessage(\'Time\\\'s up!\'); return; }\\n    const id = setTimeout(() => setSeconds(s => s - 1), 1000);\\n    return () => clearTimeout(id);\\n  }, [seconds]);\\n  return <span>⏱ {seconds}s</span>;\\n}"',
+    ...hatchBlock,
     "",
     "LEGIBILITY IS NON-NEGOTIABLE. Every message must stay fully readable after your change — never let a shape, clip, mask, texture, or color combination cover, crop, or wash out the text. Concretely:",
     '- If you touch `color` or the bubble\'s background anywhere (token or customCSS), keep them at strong contrast (dark text on light backgrounds, light text on dark ones).',
     '- For unusual bubble SHAPES (e.g. "cloud-shaped", "blob-shaped"), prefer an irregular `borderRadius` (e.g. "255px 15px 225px 15px / 15px 225px 15px 255px") or layered `boxShadow` "puffs" around the edge — these read as soft/rounded/cloud-like without ever touching the interior where the text sits. AVOID `clipPath` for bubble shapes: a clip-path crops the box itself, and an imprecise polygon (the usual failure mode) slices straight through letters. If you do use `clipPath`, keep it in the outer ~15% margin of the box and set generous padding (at least "0.85rem 1.2rem") so the entire text area sits inside the untouched center.',
     "- Never set an animation that moves, rotates, or fades the text itself to the point of unreadability — animate a border, glow, or background instead of the bubble's content box when in doubt.",
     "",
-    "Use the token list for anything it already covers (colors, fonts, corner style, tail, borders, backgrounds) — it's simpler and cheaper. Reach for the escape hatches only when the request genuinely needs a shape, glow, animation, one-shot effect, or real interactive widget the tokens don't have a slot for — and prefer the SIMPLEST hatch that satisfies the request (customCSS over customEffects over customComponents). Leave customCSS zones/customCSSText/customEffects keys/customComponents you're not touching as empty/null/unchanged rather than guessing values for them.",
+    closingGuidance,
     "",
     "The full spec shape is:",
     '{"version":1,"theme":{...all 20 tokens...},"slots":{"messageActions":[],"composerActions":[],"headerActions":[]},"customCSSText":"","customCSS":{"bubbleOutgoing":{},"bubbleIncoming":{},"background":{},"header":{}},"customEffects":{"onLoad":null,"onMessageReceived":null,"onMessageSent":null,"onReaction":null},"customComponents":[]}',
     "",
     "Start from the current spec the user provides, apply the instruction, and keep everything else unchanged.",
     "",
-    "IMAGE GENERATION: if the request describes visual content that needs real generated artwork — an animal, a character, a specific object or place, a style (\"cartoon\", \"watercolor\", \"pixel art\"), anything the 8 fixed scenes don't cover — set `backgroundImagePrompt` to a good, specific, safe image-generation prompt (style + subject, e.g. \"a cute cartoon dog, flat illustration style, colorful, simple background, no text\"). A few seconds after your response, the system will actually generate that image and switch the background to it on its own — you never set `wallpaper` to \"generated\" or touch `wallpaperUrl` yourself, ever (see the NOTE above). Instead, set `theme.wallpaper` to a normal value (the closest of the 8 fixed scenes, or a gradient) exactly as you would for any other request — that's what's shown while generating, and what stays shown if generation fails, so make it a genuine best-effort, not a placeholder. When backgroundImagePrompt is set, leave `limitation` null — the system handles explaining a generation failure itself if one occurs. When the request has NO image-generation need, leave `backgroundImagePrompt` null.",
+    ...sectionsFor("tail").flatMap((s) => s.build(active)),
     "",
-    "For every OTHER kind of request the token list + escape hatches above still can't fully satisfy (not image-related), pick the best available approximation and explain honestly in `limitation` rather than silently substituting — e.g. an out-of-scope request for real audio, a data type nothing here can represent, etc.",
+    "Where this registry still can't fully satisfy the request, pick the best available approximation and explain honestly in `limitation` rather than silently substituting — e.g. an out-of-scope request for real audio, a data type nothing here can represent, etc.",
     "",
     "Output a JSON OBJECT with exactly these keys — not the bare spec:",
-    '{"spec": {...the full spec, shape above...}, "summary": <short phrase describing what you actually changed, e.g. "set background to a green forest scene">, "limitation": <string|null — null if you fully did what was literally asked (including when backgroundImagePrompt is set — that counts as fully honoring it); otherwise ONE sentence explaining what you couldn\'t do and what you did instead>, "backgroundImagePrompt": <string|null — a generation prompt as described above, or null>}',
+    `{"spec": {...the full spec, shape above...}, "summary": <short phrase describing what you actually changed, e.g. "set background to a green forest scene">, "limitation": <string|null — null if you fully did what was literally asked; otherwise ONE sentence explaining what you couldn't do and what you did instead>, "backgroundImagePrompt": ${backgroundImagePromptSpec}}`,
     "",
     "Return ONLY that JSON object. No markdown, no commentary outside the object.",
   ].join("\n");
 }
 
-export function extractJson(raw: string): unknown {
-  let text = raw.trim();
-  const fenceMatch = text.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/);
-  if (fenceMatch) {
-    text = fenceMatch[1].trim();
-  }
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start === -1 || end === -1 || end < start) {
-    throw new Error("no JSON object found in model response");
-  }
-  return JSON.parse(text.slice(start, end + 1));
-}
-
-async function callModel(instruction: string, current: Spec, model?: string): Promise<ModelResult> {
+async function callModel(
+  instruction: string,
+  current: Spec,
+  genres: Set<Genre> | null,
+  model?: string,
+): Promise<ModelResult> {
   let res: Response;
   try {
     res = await apiPost("/api/generate", {
-      system: buildSystemPrompt(),
+      system: buildSystemPrompt(genres),
       instruction,
       spec: current,
       model,
@@ -879,7 +910,18 @@ export async function generateSpec(
     return { spec: stubValidation.spec, summary: stubResult.changes.join(", "), matched: true };
   }
 
-  const modelResult = await callModel(trimmed, current, model);
+  // Stage 1: which mechanisms does this request actually need? null means the
+  // classifier was unavailable — callModel then builds the old full prompt, so
+  // this is an accuracy improvement, never a new point of failure.
+  //
+  // Unioned with the genres the CURRENT spec already uses: the specialist has
+  // to echo the whole spec back, and it can only do that faithfully for
+  // mechanisms whose contract it was actually given.
+  const classified = await classifyInstruction(trimmed);
+  const present = genresPresentInSpec(current);
+  const genres = classified === null ? null : expandGenres([...classified, ...present]);
+
+  const modelResult = await callModel(trimmed, current, genres, model);
 
   // A validated spec that's byte-identical to the input means the model tried
   // and failed to find a representable change — that's functionally the same
@@ -901,7 +943,13 @@ export async function generateSpec(
   }
 
   if (modelResult.status === "ok" || modelResult.status === "invalid") {
-    const escalated = await callModel(trimmed, current, ESCALATION_MODEL);
+    // The escalation retry deliberately passes `null` for genres: it uses the
+    // FULL every-mechanism prompt, not the narrowed one. A no-op result is
+    // exactly the symptom a misclassification produces (the request needed a
+    // mechanism whose instructions were withheld), so retrying with the same
+    // narrow prompt would reliably fail the same way. This is what keeps a
+    // classifier miss a slower answer rather than a wrong one.
+    const escalated = await callModel(trimmed, current, null, ESCALATION_MODEL);
     if (escalated.status === "ok" && !specsEqual(escalated.spec, current)) {
       return validateCustomEffectsSyntax(
         await validateCustomComponents(

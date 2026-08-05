@@ -157,6 +157,44 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Stage 1 of theme generation — see api/classify.js and
+  // src/engine/classify.ts. Kept in lockstep with the deployed function so
+  // local dev exercises the same two-stage path production does; if this were
+  // missing here, local dev would silently always run the full mega-prompt and
+  // the narrowing would only ever be tested in production.
+  if (req.method === "POST" && req.url === "/api/classify") {
+    if (!client) {
+      sendJson(res, 503, { error: "no_api_key" });
+      return;
+    }
+    try {
+      const { system, instruction } = JSON.parse(await readBody(req));
+      const response = await client.messages.create({
+        model: MODEL,
+        max_tokens: 150,
+        system,
+        messages: [
+          { role: "user", content: `Instruction: ${instruction}\n\nReturn ONLY the JSON object.` },
+          { role: "assistant", content: "{" },
+        ],
+      });
+      const raw =
+        "{" +
+        response.content
+          .filter((block) => block.type === "text")
+          .map((block) => block.text)
+          .join("");
+      const usage = response.usage;
+      console.log(
+        `[piper] classify model=${MODEL} input_tokens=${usage?.input_tokens ?? "?"} output_tokens=${usage?.output_tokens ?? "?"} -> ${raw.replace(/\s+/g, " ").slice(0, 120)}`,
+      );
+      sendJson(res, 200, { raw, usage, model: MODEL });
+    } catch (err) {
+      sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
   if (req.method === "POST" && req.url === "/api/route") {
     if (!client) {
       sendJson(res, 503, { error: "no_api_key" });

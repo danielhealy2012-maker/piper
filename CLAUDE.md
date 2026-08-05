@@ -120,10 +120,12 @@ The intelligence is in *routing and parameter-filling*, not code generation — 
    deployment section above — snapshots are wrong here). Destructive actions apply
    immediately and are reversible rather than gated behind a confirm.
 
-Adding a new capability = one entry in `MessageActionSchema` + one case in `runInstruction`'s
-action switch (backed by a real `ChatBackend` method if it's a new kind of mutation) + one line
-in `buildRouterPrompt`. That's the extension model — grow the catalog, never generate code for
-conversation actions. (Appearance is the one place actual code-shaped output — CSS/JS strings —
+Adding a new MESSAGE capability = one entry in `MessageActionSchema` + one case in
+`runInstruction`'s action switch (backed by a real `ChatBackend` method if it's a new kind of
+mutation). That's the extension model — grow the catalog, never generate code for
+conversation actions. Adding a new APPEARANCE capability = one entry in `genres.ts`; the
+router's list of what `themeInstruction` can cover is generated from that catalog rather than
+hand-maintained here, which is what stops it drifting behind the engine again. (Appearance is the one place actual code-shaped output — CSS/JS strings —
 is allowed through, via the two spec escape hatches above, precisely because it renders/executes
 in a way that can't reach outside the chat UI itself.)
 
@@ -189,7 +191,50 @@ auto-scroll-to-bottom effect — without it a new message is appended but invisi
 Message content is NOT persisted in demo mode (resets on reload); in multiplayer it lives
 in Postgres. Theme specs persist per user in both modes.
 
+## The genre catalog (`src/engine/genres.ts`) — one source of truth for capabilities
+
+`GENRES` names every KIND of thing a `themeInstruction` can produce (`customCSS`,
+`animation`, `ambientEffect`, `reactiveEffect`, `interactiveComponent`, `imageGeneration`).
+Three prompts used to each carry their own hand-written copy of this knowledge and drifted
+apart every time a capability shipped: the router (which rejects what it doesn't believe
+exists — the bug that made "insert a timer" and "add a tic-tac-toe game" come back as
+"Piper can't do that"), and the two theme-generation stages below. All three now read this
+file, so **adding a capability is one entry here**, and `npm run check` fails if a genre
+ever stops being represented in the classifier or router prompt.
+
+Each genre carries a `classifierHint` (when the flag applies), a `routerHint` (proof to the
+router that the capability exists), and — via `SPECIALIST_SECTIONS` — the actual mechanism
+instructions, which are only included in a request that needs them. `IMPLIES` expands
+dependencies: an `@keyframes` block is useless without a `customCSS` `animation` property
+to reference it, so `animation` pulls in `customCSS`, and `ambientEffect` pulls in both.
+
 ## Generation routing ladder (`src/engine/generate.ts`)
+
+Rung 2 is **two model calls, not one** (classify, then generate):
+
+- **Stage 1 — classifier** (`engine/classify.ts` → `/api/classify`): a small, cheap call
+  that sees ONLY the instruction (no spec — this is about intent, not state) and returns
+  the genre flags it needs. Zero flags means a plain token-only change.
+- **Stage 2 — specialist** (`buildSystemPrompt(genres)`): assembles the base token/slot/
+  legibility instructions plus ONLY the mechanism blocks those flags call for. In practice
+  a narrowed prompt is 51–70% the size of the old every-mechanism one.
+
+Why: one model call holding every mechanism's instructions simultaneously was the common
+root cause behind three separate bugs (the wrong escape hatch chosen, output truncating
+mid-JSON, the router rejecting capabilities it had lost track of). Splitting intent from
+execution is what makes new capabilities addable without making every request's prompt worse.
+
+Three things keep a misclassification from becoming a lost capability:
+1. `classifyInstruction()` returns **null** when the call fails or won't parse, and null
+   means `buildSystemPrompt` builds the old full mega-prompt. This is an accuracy
+   improvement, never a new point of failure.
+2. `genresPresentInSpec(current)` is unioned in, because the specialist must echo the whole
+   spec back and can only do that faithfully for mechanisms it was given the contract for.
+   Without it, "make the background blue" against a spec holding a tic-tac-toe game would
+   classify as token-only and the model would most likely drop the game.
+3. The **escalation retry deliberately passes `null`** — the full prompt. A no-op result is
+   exactly the symptom a misclassification produces, so retrying with the same narrow
+   prompt would fail identically.
 
 1. **Keyword stub** (`draft()`) — free, deterministic, pattern-matches the instruction. Used
    directly ONLY when it validates, made ≥1 change, `residualContentWords()` is empty (no
@@ -208,8 +253,9 @@ in Postgres. Theme specs persist per user in both modes.
      actually consumes — a trigger word missing from `VOCAB` means a fully-understood
      instruction still gets escalated to the model for no reason (has happened twice:
      "scheduled" vs "schedule", and "text").
-2. **Model** (`callModel`) — POSTs to `/api/generate` with a system prompt built from the
-   registry itself (`buildSystemPrompt()`, one source of truth). Default model: `claude-haiku-4-5`.
+2. **Model** (`callModel`) — classify (above), then POST to `/api/generate` with a system
+   prompt built from the registry itself plus the classified genres' mechanism blocks
+   (`buildSystemPrompt(genres)`, one source of truth). Default model: `claude-haiku-4-5`.
 3. **No-op / escalation** — a model response is only treated as success if the returned spec is
    validated AND structurally different from the input (`specsEqual()` in `spec.ts`, which
    canonicalizes key order before comparing — needed because action `props` are a free-form

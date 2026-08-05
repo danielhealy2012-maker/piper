@@ -7,7 +7,9 @@
     "dev": "vite",
     "proxy": "node --env-file-if-exists=.env server/proxy.mjs",
     "build": "node scripts/generate-build-info.js && tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "check": "node scripts/check-prompts.mjs",
+    "check:live": "node scripts/check-live.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.68.0",

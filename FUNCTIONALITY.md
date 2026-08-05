@@ -88,6 +88,9 @@
 | Keyword fast-path | ✅ | Free theme-only changes (no API call) for patterns like "green" |
 | Feasibility detection | ✅ | Router explains why something isn't possible |
 | Compound requests | ✅ | "make my bubbles green and delete my last message" → both actions |
+| Classify-then-dispatch theming | ✅ | Theme generation is two calls: a cheap classifier picks which mechanisms the request needs, then the specialist prompt carries only those (51–70% of the old every-mechanism prompt) |
+| Classifier degradation | ✅ | A failed classifier call falls back to the full prompt; a no-op result escalates to the full prompt + `claude-opus-4-8`, so a misclassification costs latency, not capability |
+| Capability catalog | ✅ | `engine/genres.ts` is the single source for what `themeInstruction` can produce; the router's capability list is generated from it, so it can't drift behind the engine and reject things that work |
 
 ### Infrastructure & Security
 
