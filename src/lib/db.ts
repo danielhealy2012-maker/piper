@@ -265,6 +265,24 @@ export interface SharedComponentRow {
   createdBy: string;
 }
 
+// Migrations in this project are applied BY HAND in the Supabase SQL editor
+// (see SETUP.md), while code ships automatically on push to main. So there is
+// always a window where deployed code is ahead of the schema. These two
+// readers must degrade to "no shared components" in that window rather than
+// throw: they're awaited inside the same Promise.all as messages, users and
+// the theme in Workspace's initial load, so a rejection here doesn't just
+// hide widgets — it takes down the entire chat and renders a blank app.
+// Additive features must never be able to do that.
+function isMissingTable(error: { code?: string; message?: string } | null): boolean {
+  // 42P01 = undefined_table. PostgREST also 404s an unknown table before it
+  // ever reaches Postgres, hence the message check.
+  return (
+    error?.code === "42P01" ||
+    error?.code === "PGRST205" ||
+    /does not exist|schema cache/i.test(error?.message ?? "")
+  );
+}
+
 export async function fetchSharedComponents(conversationId: string): Promise<SharedComponentRow[]> {
   const sb = requireSupabase();
   const { data, error } = await sb
@@ -272,7 +290,15 @@ export async function fetchSharedComponents(conversationId: string): Promise<Sha
     .select("component_id, label, slot, code, created_by")
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: true });
-  if (error) throw error;
+  if (error) {
+    if (isMissingTable(error)) {
+      console.warn(
+        "[piper] shared_components table missing — run supabase/migrations/0003_shared_components.sql. Shared widgets are unavailable until then; the rest of the app is unaffected.",
+      );
+      return [];
+    }
+    throw error;
+  }
   return (data ?? []).map((r) => ({
     id: r.component_id as string,
     label: r.label as string,
@@ -290,7 +316,11 @@ export async function fetchSharedComponentState(
     .from("shared_component_state")
     .select("component_id, state")
     .eq("conversation_id", conversationId);
-  if (error) throw error;
+  if (error) {
+    // Same deploy-ahead-of-schema window as fetchSharedComponents above.
+    if (isMissingTable(error)) return {};
+    throw error;
+  }
   return Object.fromEntries((data ?? []).map((r) => [r.component_id as string, r.state]));
 }
 
@@ -359,7 +389,7 @@ export async function writeSharedComponentState(
 
 /** Subscribes to the shared tables for one conversation. onChange fires on any
  *  insert/update/delete so the caller can refetch a consistent view. */
-export function subscribeConversation(conversationId: string, onChange: () => void): RealtimeChannel {
+export function subscribeConversation(conversationId: string, onChange: () => void): RealtimeChannel[] {
   const sb = requireSupabase();
   const channel = sb
     .channel(`conversation:${conversationId}`)
@@ -375,9 +405,19 @@ export function subscribeConversation(conversationId: string, onChange: () => vo
       console.log("[realtime] reactions change:", payload);
       onChange();
     })
-    // Shared components and their state ride the same channel as messages —
-    // without these two, the other person's move in a two-player game only
-    // appears when something else happens to trigger a refetch.
+    .subscribe((status) => {
+      console.log(`[realtime] subscription status: ${status}`);
+    });
+
+  // Shared components and their state get their OWN channel rather than
+  // riding the one above. Deployed code can be ahead of the hand-applied
+  // schema (see fetchSharedComponents), and a postgres_changes binding to a
+  // table that doesn't exist yet can fail the whole channel — which, on a
+  // shared channel, would silently take live messages down with it. Isolated,
+  // the worst case is that shared widgets aren't live until the migration
+  // runs, and messages keep working.
+  const sharedChannel = sb
+    .channel(`conversation-shared:${conversationId}`)
     .on(
       "postgres_changes",
       {
@@ -405,9 +445,15 @@ export function subscribeConversation(conversationId: string, onChange: () => vo
       },
     )
     .subscribe((status) => {
-      console.log(`[realtime] subscription status: ${status}`);
+      console.log(`[realtime] shared-component subscription status: ${status}`);
+      if (status === "CHANNEL_ERROR") {
+        console.warn(
+          "[piper] shared-component realtime unavailable — has supabase/migrations/0003_shared_components.sql been run? Messages are unaffected.",
+        );
+      }
     });
-  return channel;
+
+  return [channel, sharedChannel];
 }
 
 // ---------------------------------------------------------------------------

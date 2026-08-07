@@ -300,9 +300,9 @@ export function createSupabaseBackend(conversationId: string, userId: string): C
       }));
     },
     subscribe(onChange) {
-      const channel = subscribeConversation(conversationId, onChange);
+      const channels = subscribeConversation(conversationId, onChange);
       return () => {
-        void requireSupabase().removeChannel(channel);
+        for (const channel of channels) void requireSupabase().removeChannel(channel);
       };
     },
     loadTheme: () => loadTheme(conversationId, userId),
