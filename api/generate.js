@@ -31,7 +31,13 @@ export default async function handler(req, res) {
       // bare theme spec but silently truncated mid-JSON as soon as escape
       // hatches were in heavy use, which is a much worse failure than the
       // extra cost of headroom here.
-      max_tokens: 8000,
+      //
+      // 16000 (up from 8000) because the per-component code cap went to 6000
+      // to fit real two-player widgets — 5 components x 6000 chars is ~7.5k
+      // tokens of echo on its own, which 8000 could not have held alongside
+      // the theme. This is a ceiling, not spend: a typical response is far
+      // smaller.
+      max_tokens: 16000,
       system,
       messages: [
         {

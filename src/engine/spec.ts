@@ -213,7 +213,21 @@ export const CustomComponentSchema = z.object({
   id: z.string().min(1).max(40),
   label: z.string().min(1).max(60),
   slot: z.enum(CUSTOM_COMPONENT_SLOTS),
-  code: z.string().min(1).max(3000),
+  // 6000, raised from 3000 after measuring real output: a countdown timer is
+  // ~500 chars, but anything two-player is structurally bigger because it
+  // carries a state shape, turn logic and player identity. Measured against
+  // the live model, tic-tac-toe came back at 3090, a word game at 3503, a
+  // shared whiteboard at 3596 and a calculator at 3860 — so the old cap
+  // rejected most of the interesting widgets, including three of the
+  // approved shared-state features, and surfaced as the unhelpful "the model
+  // couldn't produce a valid change".
+  //
+  // Not raised further because of a real coupling: the whole spec is echoed
+  // back on every request, so `max` x the 5-component limit has to fit inside
+  // /api/generate's max_tokens with room to spare, or the response truncates
+  // mid-JSON — which is its own previously-fixed bug. 5 x 6000 chars is
+  // ~7.5k tokens, which is why max_tokens went to 16000 alongside this.
+  code: z.string().min(1).max(6000),
   scope: z.enum(CUSTOM_COMPONENT_SCOPES).default("personal"),
 });
 export type CustomComponent = z.infer<typeof CustomComponentSchema>;

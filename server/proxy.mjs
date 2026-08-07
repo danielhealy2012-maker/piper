@@ -88,7 +88,7 @@ const server = http.createServer(async (req, res) => {
         // See api/generate.js: the full spec (including any customComponents
         // source code) is echoed back every request, and 1500 silently
         // truncated mid-JSON once escape hatches were in heavy use.
-        max_tokens: 8000,
+        max_tokens: 16000,
         system,
         messages: [
           {
