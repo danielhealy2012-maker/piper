@@ -709,6 +709,7 @@ async function callModel(
   instruction: string,
   current: Spec,
   genres: Set<Genre> | null,
+  history: string | null,
   model?: string,
 ): Promise<ModelResult> {
   let res: Response;
@@ -717,6 +718,7 @@ async function callModel(
       system: buildSystemPrompt(genres),
       instruction,
       spec: current,
+      history,
       model,
     });
   } catch {
@@ -902,6 +904,7 @@ export function keywordOnly(instruction: string, current: Spec): { spec: Spec; s
 export async function generateSpec(
   instruction: string,
   current: Spec,
+  history?: string | null,
   model?: string,
 ): Promise<GenerateResult> {
   const trimmed = instruction.trim();
@@ -933,7 +936,7 @@ export async function generateSpec(
   const present = genresPresentInSpec(current);
   const genres = classified === null ? null : expandGenres([...classified, ...present]);
 
-  const modelResult = await callModel(trimmed, current, genres, model);
+  const modelResult = await callModel(trimmed, current, genres, history ?? null, model);
 
   // A validated spec that's byte-identical to the input means the model tried
   // and failed to find a representable change — that's functionally the same
@@ -961,7 +964,7 @@ export async function generateSpec(
     // mechanism whose instructions were withheld), so retrying with the same
     // narrow prompt would reliably fail the same way. This is what keeps a
     // classifier miss a slower answer rather than a wrong one.
-    const escalated = await callModel(trimmed, current, null, ESCALATION_MODEL);
+    const escalated = await callModel(trimmed, current, null, history ?? null, ESCALATION_MODEL);
     if (escalated.status === "ok" && !specsEqual(escalated.spec, current)) {
       return validateCustomEffectsSyntax(
         await validateCustomComponents(

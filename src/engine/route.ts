@@ -20,6 +20,7 @@ export async function routeInstruction(
   messages: ChatMessage[],
   users: DisplayUser[],
   viewerId: string,
+  history?: string | null,
 ): Promise<RouteResult> {
   let res: Response;
   try {
@@ -27,6 +28,7 @@ export async function routeInstruction(
       system: buildRouterPrompt(),
       instruction,
       conversation: describeConversation(messages, users, viewerId),
+      history: history ?? null,
     });
   } catch {
     return { status: "unavailable" };

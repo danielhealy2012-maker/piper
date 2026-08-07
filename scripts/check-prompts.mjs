@@ -33,6 +33,7 @@ async function loadModules() {
         export * from "./src/engine/classify";
         export { buildSystemPrompt } from "./src/engine/generate";
         export { buildRouterPrompt } from "./src/engine/actions";
+        export { formatHistory } from "./src/engine/history";
         export { DEFAULT_SPEC } from "./src/engine/spec";
       `,
       resolveDir: ROOT,
@@ -77,6 +78,7 @@ const {
   buildClassifierPrompt,
   buildRouterPrompt,
   genresPresentInSpec,
+  formatHistory,
   DEFAULT_SPEC,
 } = mod;
 
@@ -276,6 +278,45 @@ group("router prompt covers every genre");
     ok(`router knows about ${name}`, prompt.includes(GENRES[name].routerHint));
   }
   ok("router is told not to reject these", prompt.toLowerCase().includes("never mark"));
+}
+
+// -- 10. Conversational memory ------------------------------------------------
+group("instruction history");
+{
+  ok("a fresh session sends no history", formatHistory([]) === null);
+
+  const many = Array.from({ length: 20 }, (_, i) => ({
+    instruction: `instruction ${i}`,
+    summary: `did ${i}`,
+    matched: true,
+  }));
+  const capped = formatHistory(many);
+  // Uncapped, this grows every single request for the whole session.
+  ok("history is capped", (capped.match(/user asked:/g) ?? []).length <= 8);
+  ok("history keeps the most recent turns", capped.includes("instruction 19"));
+  ok("history drops the oldest turns", !capped.includes('"instruction 0"'));
+
+  const mixed = formatHistory([
+    { instruction: "make it purple", summary: "bubbles -> purple", matched: true },
+    { instruction: "add a xylophone", summary: "couldn't do that one", matched: false },
+  ]);
+  ok("history records what was asked", mixed.includes("make it purple"));
+  ok("history records the outcome", mixed.includes("bubbles -> purple"));
+  // "that didn't work, why?" is a follow-up ABOUT a failure — dropping failed
+  // turns leaves the model answering with no idea what went wrong.
+  ok("failed turns are kept, not filtered", mixed.includes("add a xylophone"));
+  ok("failed turns are marked as such", mixed.includes("not applied"));
+  // History is past turns quoted into a prompt; without this the model can
+  // read an old instruction as a fresh one and re-apply it.
+  ok("history is fenced as context, not instructions", mixed.includes("Do NOT re-apply"));
+
+  // Measured per FIELD, not on the whole string — the fixed preamble is ~460
+  // chars on its own, so a total-length threshold would say nothing about
+  // whether a rambling instruction actually got truncated.
+  const long = formatHistory([{ instruction: "x".repeat(500), summary: "y".repeat(500), matched: true }]);
+  const longestRun = Math.max(...[...long.matchAll(/x+|y+/g)].map((m) => m[0].length));
+  ok("long entries are clipped", longestRun <= 200, `longest field run was ${longestRun}`);
+  ok("clipping is marked with an ellipsis", long.includes("…"));
 }
 
 console.log(

@@ -75,8 +75,11 @@ const server = http.createServer(async (req, res) => {
     }
     try {
       const body = JSON.parse(await readBody(req));
-      const { system, instruction, spec, model } = body;
+      const { system, instruction, spec, history, model } = body;
       const chosenModel = model || MODEL;
+      // See api/generate.js: prior turns of this session, so follow-ups like
+      // "make it more like that" have something to refer to.
+      const historyBlock = history ? `${history}\n\n` : "";
       // No prefill: this endpoint accepts a model override (escalation to
       // claude-opus-4-8), and not every model supports assistant-prefill —
       // one that doesn't 400s. extractJson() finds the JSON regardless.
@@ -90,7 +93,7 @@ const server = http.createServer(async (req, res) => {
         messages: [
           {
             role: "user",
-            content: `Current spec:\n${JSON.stringify(spec)}\n\nInstruction: ${instruction}\n\nReturn ONLY the {"spec":...,"summary":...,"limitation":...,"backgroundImagePrompt":...} JSON object described in the system prompt.`,
+            content: `${historyBlock}Current spec:\n${JSON.stringify(spec)}\n\nInstruction: ${instruction}\n\nReturn ONLY the {"spec":...,"summary":...,"limitation":...,"backgroundImagePrompt":...} JSON object described in the system prompt.`,
           },
         ],
       });
@@ -201,7 +204,8 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     try {
-      const { system, instruction, conversation } = JSON.parse(await readBody(req));
+      const { system, instruction, conversation, history } = JSON.parse(await readBody(req));
+      const historyBlock = history ? `${history}\n\n` : "";
       const response = await client.messages.create({
         model: MODEL,
         max_tokens: 1500,
@@ -209,7 +213,7 @@ const server = http.createServer(async (req, res) => {
         messages: [
           {
             role: "user",
-            content: `${conversation}\n\nInstruction: ${instruction}\n\nReturn ONLY the JSON plan.`,
+            content: `${historyBlock}${conversation}\n\nInstruction: ${instruction}\n\nReturn ONLY the JSON plan.`,
           },
           { role: "assistant", content: "{" },
         ],

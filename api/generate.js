@@ -9,8 +9,13 @@ export default async function handler(req, res) {
   if (!(await meter(user, "model", res))) return;
 
   try {
-    const { system, instruction, spec, model } = await readJsonBody(req);
+    const { system, instruction, spec, history, model } = await readJsonBody(req);
     const chosenModel = model || MODEL;
+    // Prior turns of this session, so "make it more like that" / "a bit less"
+    // have a referent. Placed BEFORE the spec and instruction so the thing
+    // being acted on is the last thing read. Omitted entirely on a fresh
+    // session rather than sent as an empty section.
+    const historyBlock = history ? `${history}\n\n` : "";
     // No assistant-prefill here (unlike route.js/translate.js): this endpoint
     // accepts a model OVERRIDE (used for the escalation retry to
     // claude-opus-4-8), and not every model supports prefill — one that
@@ -31,7 +36,7 @@ export default async function handler(req, res) {
       messages: [
         {
           role: "user",
-          content: `Current spec:\n${JSON.stringify(spec)}\n\nInstruction: ${instruction}\n\nReturn ONLY the {"spec":...,"summary":...,"limitation":...,"backgroundImagePrompt":...} JSON object described in the system prompt.`,
+          content: `${historyBlock}Current spec:\n${JSON.stringify(spec)}\n\nInstruction: ${instruction}\n\nReturn ONLY the {"spec":...,"summary":...,"limitation":...,"backgroundImagePrompt":...} JSON object described in the system prompt.`,
         },
       ],
     });

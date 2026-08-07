@@ -9,7 +9,10 @@ export default async function handler(req, res) {
   if (!(await meter(user, "model", res))) return;
 
   try {
-    const { system, instruction, conversation } = await readJsonBody(req);
+    const { system, instruction, conversation, history } = await readJsonBody(req);
+    // See api/generate.js: prior turns give references like "that" / "again" /
+    // "undo that" something to resolve against.
+    const historyBlock = history ? `${history}\n\n` : "";
     const response = await anthropic.messages.create({
       model: MODEL,
       max_tokens: 1500,
@@ -17,7 +20,7 @@ export default async function handler(req, res) {
       messages: [
         {
           role: "user",
-          content: `${conversation}\n\nInstruction: ${instruction}\n\nReturn ONLY the JSON plan.`,
+          content: `${historyBlock}${conversation}\n\nInstruction: ${instruction}\n\nReturn ONLY the JSON plan.`,
         },
         // Prefill "{" so the reply can only be the JSON plan.
         { role: "assistant", content: "{" },

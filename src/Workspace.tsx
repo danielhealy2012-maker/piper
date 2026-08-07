@@ -4,6 +4,7 @@ import type { TranslationEntry } from "./components/slots";
 import { generateSpec, keywordOnly } from "./engine/generate";
 import { randomizeSpec } from "./engine/randomize";
 import { routeInstruction } from "./engine/route";
+import { formatHistory } from "./engine/history";
 import { translateText } from "./engine/translate";
 import { generateResponse, suggestReplies, summarizeConversation } from "./lib/queries";
 import { errorMessage } from "./lib/errors";
@@ -325,6 +326,12 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
         : trimmed;
       if (answeringClarification) setPendingClarification(null);
 
+      // Prior turns of this session, so "make it more like that", "a bit less",
+      // "undo that and try again" resolve to something. Snapshotted BEFORE
+      // this turn is logged, so the model never sees the instruction it's
+      // currently being asked to carry out listed as already-done history.
+      const history = formatHistory(log);
+
       // 1. Free keyword fast-path (personal theme only).
       if (!answeringClarification) {
         const kw = keywordOnly(trimmed, composedSpec);
@@ -338,10 +345,10 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
       }
 
       // 2. Router.
-      const routed = await routeInstruction(effectiveInstruction, messages, users, backend.viewerId);
+      const routed = await routeInstruction(effectiveInstruction, messages, users, backend.viewerId, history);
 
       if (routed.status === "unavailable") {
-        const r = await generateSpec(effectiveInstruction, composedSpec);
+        const r = await generateSpec(effectiveInstruction, composedSpec, history);
         if (r.matched) {
           await applyTheme(r.spec, composedSpec);
           logResult(trimmed, r.limitation ? `${r.summary} — ${r.limitation}` : r.summary, true);
@@ -396,7 +403,7 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
 
       // Handle theme instruction (appearance request)
       if (plan.themeInstruction) {
-        const r = await generateSpec(plan.themeInstruction, composedSpec);
+        const r = await generateSpec(plan.themeInstruction, composedSpec, history);
         if (r.matched) {
           inverses.push(await persistSpec(r.spec));
           applied.push(r.summary);

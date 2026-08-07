@@ -240,6 +240,29 @@ brings the board back empty, which is silent data loss dressed up as a successfu
 theme" is a personal appearance action, and silently deleting a game the other person is
 using is a much bigger consequence than the request implies.
 
+## Conversational memory (`src/engine/history.ts`)
+
+Every `/api/generate` and `/api/route` call used to be a single stateless turn — the
+current spec went along, but not the back-and-forth that produced it. That made a whole
+register of instruction impossible: "make it more like that", "a bit less", "undo that and
+try again", "the same but for their bubbles". The on-screen change log already recorded
+exactly this and was pure UI decoration; `formatHistory(log)` feeds it back in.
+
+- **Session-only by decision.** It reuses `Workspace`'s in-memory `log`, which already
+  resets on reload. No table, no persistence. If reload-survival is ever wanted, that
+  becomes a server-side store, not a bigger payload.
+- Capped at the last 8 turns, each field clipped to 200 chars — uncapped, it grows on every
+  request for the whole session.
+- **Failed turns are kept, not filtered.** "That didn't work, why?" is a follow-up *about*
+  a failure; dropping it leaves the model answering with no idea what went wrong.
+- Fenced as context with an explicit "do not re-apply these" — it's past instructions
+  quoted into a prompt, and without the fence the model can read an old one as a fresh one.
+- Snapshotted BEFORE the current turn is logged, so the model never sees the instruction
+  it's currently executing listed as already-done.
+- **The classifier deliberately does NOT get it** — it stays instruction-only. Follow-ups
+  are already covered there by `genresPresentInSpec`: "make it slither faster" against a
+  spec that has an `onLoad` effect classifies correctly from the spec alone.
+
 ## The genre catalog (`src/engine/genres.ts`) — one source of truth for capabilities
 
 `GENRES` names every KIND of thing a `themeInstruction` can produce (`customCSS`,
