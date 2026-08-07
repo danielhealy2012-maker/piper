@@ -27,6 +27,10 @@ export interface ChatProps {
   onSend: (text: string) => void;
   onTranslate: (messageId: string, target: string) => void;
   onRemoveCustomComponent?: (id: string) => void;
+  /** Live state for scope:"shared" components, keyed by component id, and the
+   *  writer that propagates a change to the other person. */
+  sharedState?: Record<string, unknown>;
+  onSetSharedState?: (componentId: string, next: unknown) => void;
 }
 
 export function Chat({
@@ -40,6 +44,8 @@ export function Chat({
   onSend,
   onTranslate,
   onRemoveCustomComponent,
+  sharedState,
+  onSetSharedState,
 }: ChatProps) {
   const [draft, setDraft] = useState("");
   const theme = spec.theme;
@@ -89,6 +95,8 @@ export function Chat({
           viewerId={viewerId}
           sendMessage={onSend}
           onRemove={(id) => onRemoveCustomComponent?.(id)}
+          sharedState={sharedState?.[c.id]}
+          onSetSharedState={onSetSharedState}
         />
       ));
 

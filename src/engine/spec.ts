@@ -191,11 +191,30 @@ export type CustomEffects = z.infer<typeof CustomEffectsSchema>;
 export const CUSTOM_COMPONENT_SLOTS = ["composerActions", "headerActions", "standalone"] as const;
 export type CustomComponentSlot = (typeof CUSTOM_COMPONENT_SLOTS)[number];
 
+// Which of the two scope models a component belongs to.
+//
+// "personal" (the default, and the original behavior) lives in the spec, in
+// `member_theme`, owner-only by RLS — a calculator or a countdown timer that
+// only concerns you.
+//
+// "shared" lives in the conversation-level `shared_components` table and is
+// synced to both people via Realtime, with a `sharedState` blob alongside it.
+// This is the only way a two-player game, a shared to-do list or a live poll
+// can work at all: a personal-scoped board renders for one person, and its
+// state is local `useState` inside the compiled component, so neither the
+// board nor the moves reach the other person.
+//
+// Defaulted rather than required: every spec written before this existed
+// omits it, and those components were all personal.
+export const CUSTOM_COMPONENT_SCOPES = ["personal", "shared"] as const;
+export type CustomComponentScope = (typeof CUSTOM_COMPONENT_SCOPES)[number];
+
 export const CustomComponentSchema = z.object({
   id: z.string().min(1).max(40),
   label: z.string().min(1).max(60),
   slot: z.enum(CUSTOM_COMPONENT_SLOTS),
   code: z.string().min(1).max(3000),
+  scope: z.enum(CUSTOM_COMPONENT_SCOPES).default("personal"),
 });
 export type CustomComponent = z.infer<typeof CustomComponentSchema>;
 

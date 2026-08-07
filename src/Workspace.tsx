@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chat } from "./components/Chat";
 import type { TranslationEntry } from "./components/slots";
 import { generateSpec, keywordOnly } from "./engine/generate";
@@ -8,7 +8,7 @@ import { translateText } from "./engine/translate";
 import { generateResponse, suggestReplies, summarizeConversation } from "./lib/queries";
 import { errorMessage } from "./lib/errors";
 import { DEFAULT_SPEC, type Spec } from "./engine/spec";
-import type { ChatBackend, DisplayUser } from "./lib/backend";
+import type { ChatBackend, DisplayUser, SharedComponentRecord } from "./lib/backend";
 import type { ChatMessage } from "./lib/types";
 
 const EXAMPLE_CHIPS = [
@@ -49,7 +49,11 @@ export interface WorkspaceProps {
 export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [users, setUsers] = useState<DisplayUser[]>([]);
+  // The PERSONAL spec — what gets written to member_theme. Shared components
+  // are deliberately not in here; see composedSpec below.
   const [spec, setSpec] = useState<Spec>(DEFAULT_SPEC);
+  const [sharedComponents, setSharedComponents] = useState<SharedComponentRecord[]>([]);
+  const [sharedState, setSharedState] = useState<Record<string, unknown>>({});
   const [translations, setTranslations] = useState<Record<string, TranslationEntry>>({});
   const [instruction, setInstruction] = useState("");
   const [busy, setBusy] = useState(false);
@@ -65,26 +69,40 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
   const [pendingClarification, setPendingClarification] = useState<string | null>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
 
+  // Fires on every realtime event, so it must pull everything SHARED: the
+  // other person's message, the widget they just added, and their move inside
+  // it. Shared component state is exactly as live as messages are because it
+  // refetches on the same signal.
   const refresh = useCallback(async () => {
-    console.log("[refresh] fetching messages...");
-    const msgs = await backend.fetchMessages();
-    console.log("[refresh] got", msgs.length, "messages:", msgs);
+    console.log("[refresh] fetching shared state...");
+    const [msgs, components, state] = await Promise.all([
+      backend.fetchMessages(),
+      backend.fetchSharedComponents(),
+      backend.fetchSharedState(),
+    ]);
+    console.log("[refresh] got", msgs.length, "messages,", components.length, "shared components");
     setMessages(msgs);
+    setSharedComponents(components);
+    setSharedState(state);
   }, [backend]);
 
   // Initial load + realtime subscription.
   useEffect(() => {
     let alive = true;
     void (async () => {
-      const [nextUsers, nextMessages, nextSpec] = await Promise.all([
+      const [nextUsers, nextMessages, nextSpec, nextShared, nextSharedState] = await Promise.all([
         backend.getUsers(),
         backend.fetchMessages(),
         backend.loadTheme(),
+        backend.fetchSharedComponents(),
+        backend.fetchSharedState(),
       ]);
       if (!alive) return;
       setUsers(nextUsers);
       setMessages(nextMessages);
       setSpec(nextSpec);
+      setSharedComponents(nextShared);
+      setSharedState(nextSharedState);
       setTranslations({});
       setLog([]);
       setUndoStack([]);
@@ -117,17 +135,132 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
     setNotice(null);
   }
 
-  async function applyTheme(next: Spec, previous: Spec) {
-    setSpec(next);
-    await backend.saveTheme(next);
-    pushUndo({
+  // The spec as the USER and the MODEL see it: personal components plus the
+  // conversation's shared ones, which live in a different table entirely. The
+  // model has to be shown both or it can't modify or remove a shared widget
+  // ("make the tic-tac-toe board bigger") — it would look to it like the thing
+  // doesn't exist. Everything written back out is split again by persistSpec.
+  const composedSpec = useMemo<Spec>(() => {
+    const sharedAsComponents = sharedComponents.map((c) => ({
+      id: c.id,
+      label: c.label,
+      slot: c.slot,
+      code: c.code,
+      scope: "shared" as const,
+    }));
+    const sharedIds = new Set(sharedAsComponents.map((c) => c.id));
+    return {
+      ...spec,
+      customComponents: [
+        // A personal component whose id collides with a shared one would
+        // otherwise duplicate the React key and render twice; shared wins,
+        // since that's the copy both people can see.
+        ...spec.customComponents.filter((c) => !sharedIds.has(c.id)),
+        ...sharedAsComponents,
+      ],
+    };
+  }, [spec, sharedComponents]);
+
+  /**
+   * The single write path for a new spec, and the only place the two scopes
+   * are separated. Whatever comes in — from the keyword stub, the model, a
+   * reset, or an undo — personal content goes to member_theme and
+   * scope:"shared" components go to the conversation table.
+   *
+   * Routing on the way OUT (rather than asking callers to pre-split) is what
+   * stops a shared component leaking into the personal spec: the keyword stub,
+   * for instance, structuredClones whatever spec it's handed, so it would
+   * happily copy the shared tic-tac-toe board into member_theme and leave a
+   * private duplicate behind.
+   *
+   * Returns its own inverse for the undo stack.
+   */
+  async function persistSpec(next: Spec): Promise<UndoOp> {
+    const previousSpec = spec;
+    const previousShared = sharedComponents;
+
+    const personal = next.customComponents.filter((c) => c.scope !== "shared");
+    const shared = next.customComponents.filter((c) => c.scope === "shared");
+    const personalSpec: Spec = { ...next, customComponents: personal };
+
+    setSpec(personalSpec);
+    await backend.saveTheme(personalSpec);
+
+    const nextIds = new Set(shared.map((c) => c.id));
+    const removed = previousShared.filter((c) => !nextIds.has(c.id));
+    const changed = shared.filter((c) => {
+      const before = previousShared.find((p) => p.id === c.id);
+      return !before || before.code !== c.code || before.label !== c.label || before.slot !== c.slot;
+    });
+
+    // Snapshot the state of anything being removed BEFORE the delete cascades
+    // it away. Without this, undoing the removal of a game brings the board
+    // back empty — the component is restored but every move is gone, which is
+    // silent data loss dressed up as a successful undo.
+    const removedState = Object.fromEntries(removed.map((c) => [c.id, sharedState[c.id]]));
+
+    for (const c of removed) await backend.removeSharedComponent(c.id);
+    for (const c of changed) {
+      await backend.saveSharedComponent({ id: c.id, label: c.label, slot: c.slot, code: c.code });
+    }
+    if (removed.length > 0 || changed.length > 0) {
+      setSharedComponents(
+        shared.map((c) => ({
+          id: c.id,
+          label: c.label,
+          slot: c.slot,
+          code: c.code,
+          createdBy: previousShared.find((p) => p.id === c.id)?.createdBy ?? backend.viewerId,
+        })),
+      );
+    }
+
+    return {
       label: "theme",
       run: async () => {
-        setSpec(previous);
-        await backend.saveTheme(previous);
+        setSpec(previousSpec);
+        await backend.saveTheme(previousSpec);
+        // Restore the shared set exactly: re-add what this change removed,
+        // drop what it added, and revert code edits to anything it modified.
+        const previousIds = new Set(previousShared.map((c) => c.id));
+        for (const c of shared) if (!previousIds.has(c.id)) await backend.removeSharedComponent(c.id);
+        for (const c of previousShared) {
+          await backend.saveSharedComponent({ id: c.id, label: c.label, slot: c.slot, code: c.code });
+        }
+        // Re-seed the state that the delete cascaded away. Ordered after the
+        // component rows exist, since the state table's foreign key points at
+        // them.
+        for (const [id, state] of Object.entries(removedState)) {
+          if (state !== undefined) await backend.setSharedState(id, state);
+        }
+        setSharedComponents(previousShared);
+        setSharedState((prev) => ({ ...prev, ...removedState }));
       },
-    });
+    };
   }
+
+  async function applyTheme(next: Spec, _previous: Spec) {
+    pushUndo(await persistSpec(next));
+  }
+
+  // Optimistic local write, then propagate — the same shape as sending a
+  // message. The other person's copy updates through the Realtime
+  // subscription on shared_component_state, which is what makes a move in a
+  // two-player game show up on their board.
+  const handleSetSharedState = useCallback(
+    async (componentId: string, next: unknown) => {
+      setSharedState((prev) => ({ ...prev, [componentId]: next }));
+      try {
+        await backend.setSharedState(componentId, next);
+      } catch (err) {
+        // Don't leave the UI showing a move that never landed.
+        console.error("[sharedState] write failed:", err);
+        setNotice(`Couldn't sync that change (${errorMessage(err)}).`);
+        await refresh();
+      }
+    },
+    [backend, refresh],
+  );
 
   async function handleSend(text: string) {
     await backend.send(text);
@@ -136,10 +269,17 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
 
   // The guaranteed, model-independent way to get rid of a misbehaving custom
   // component — see CustomComponentSlot.tsx. Never blocked on a model call.
+  //
+  // For a SHARED component this removes it for both people, which is the
+  // deliberate trade: a shared widget that's broken or misbehaving is broken
+  // for both, so either person must be able to kill it without waiting on the
+  // other. It stays undoable like every other destructive action here.
   async function removeCustomComponent(id: string) {
-    const previous = spec;
-    const next = { ...spec, customComponents: spec.customComponents.filter((c) => c.id !== id) };
-    await applyTheme(next, previous);
+    const next = {
+      ...composedSpec,
+      customComponents: composedSpec.customComponents.filter((c) => c.id !== id),
+    };
+    pushUndo(await persistSpec(next));
   }
 
   async function handleTranslate(messageId: string, target: string) {
@@ -187,9 +327,9 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
 
       // 1. Free keyword fast-path (personal theme only).
       if (!answeringClarification) {
-        const kw = keywordOnly(trimmed, spec);
+        const kw = keywordOnly(trimmed, composedSpec);
         if (kw) {
-          await applyTheme(kw.spec, spec);
+          await applyTheme(kw.spec, composedSpec);
           logResult(trimmed, kw.summary, true);
           setNotice(null);
           setInstruction("");
@@ -201,9 +341,9 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
       const routed = await routeInstruction(effectiveInstruction, messages, users, backend.viewerId);
 
       if (routed.status === "unavailable") {
-        const r = await generateSpec(effectiveInstruction, spec);
+        const r = await generateSpec(effectiveInstruction, composedSpec);
         if (r.matched) {
-          await applyTheme(r.spec, spec);
+          await applyTheme(r.spec, composedSpec);
           logResult(trimmed, r.limitation ? `${r.summary} — ${r.limitation}` : r.summary, true);
           setNotice(r.limitation ?? null);
         } else {
@@ -238,48 +378,27 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
       const notes: string[] = [];
       const inverses: UndoOp[] = [];
 
-      // Handle theme mutations (reset, randomize)
+      // Handle theme mutations (reset, randomize).
+      //
+      // Both deliberately KEEP the conversation's shared components. "Reset my
+      // theme" is a personal appearance action, and silently deleting a game
+      // or to-do list the other person is also using — for both of you — is a
+      // much bigger consequence than the request implies. Removing a shared
+      // widget stays an explicit act: its ✕, or asking for it by name.
+      const keepShared = composedSpec.customComponents.filter((c) => c.scope === "shared");
       if (plan.themeMutation === "reset") {
-        const previous = spec;
-        setSpec(DEFAULT_SPEC);
-        await backend.saveTheme(DEFAULT_SPEC);
-        inverses.push({
-          label: "theme",
-          run: async () => {
-            setSpec(previous);
-            await backend.saveTheme(previous);
-          },
-        });
+        inverses.push(await persistSpec({ ...DEFAULT_SPEC, customComponents: keepShared }));
         applied.push("reset theme");
       } else if (plan.themeMutation === "randomize") {
-        const previous = spec;
-        const next = randomizeSpec(spec);
-        setSpec(next);
-        await backend.saveTheme(next);
-        inverses.push({
-          label: "theme",
-          run: async () => {
-            setSpec(previous);
-            await backend.saveTheme(previous);
-          },
-        });
+        inverses.push(await persistSpec(randomizeSpec(composedSpec)));
         applied.push("randomized theme");
       }
 
       // Handle theme instruction (appearance request)
       if (plan.themeInstruction) {
-        const r = await generateSpec(plan.themeInstruction, spec);
+        const r = await generateSpec(plan.themeInstruction, composedSpec);
         if (r.matched) {
-          const previous = spec;
-          setSpec(r.spec);
-          await backend.saveTheme(r.spec);
-          inverses.push({
-            label: "theme",
-            run: async () => {
-              setSpec(previous);
-              await backend.saveTheme(previous);
-            },
-          });
+          inverses.push(await persistSpec(r.spec));
           applied.push(r.summary);
           // A substitution ("asked for a dog, got the closest bundled scene")
           // must never be silent — surface it distinctly from a normal note.
@@ -744,7 +863,7 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
       <div className="flex flex-1 items-start justify-center">
         <div className="w-full max-w-md">
           <Chat
-            spec={spec}
+            spec={composedSpec}
             messages={messages}
             viewerId={backend.viewerId}
             users={users}
@@ -754,6 +873,8 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
             onSend={(t) => void handleSend(t)}
             onTranslate={(id, target) => void handleTranslate(id, target)}
             onRemoveCustomComponent={(id) => void removeCustomComponent(id)}
+            sharedState={sharedState}
+            onSetSharedState={(id, next) => void handleSetSharedState(id, next)}
           />
         </div>
       </div>

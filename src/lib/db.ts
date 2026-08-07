@@ -1,7 +1,7 @@
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { requireSupabase } from "./supabase";
 import type { Conversation, DbMessage, DbReaction, Profile } from "./types";
-import { DEFAULT_SPEC, validateSpec, type Spec } from "../engine/spec";
+import { DEFAULT_SPEC, validateSpec, type CustomComponentSlot, type Spec } from "../engine/spec";
 
 // ---------------------------------------------------------------------------
 // Auth
@@ -252,6 +252,108 @@ export async function saveTheme(conversationId: string, userId: string, spec: Sp
 }
 
 // ---------------------------------------------------------------------------
+// SHARED custom components (supabase/migrations/0003_shared_components.sql)
+// ---------------------------------------------------------------------------
+// Unlike member_theme above, these are conversation-scoped: RLS lets any
+// member read and write them, so whatever one person adds shows up for both.
+
+export interface SharedComponentRow {
+  id: string;
+  label: string;
+  slot: CustomComponentSlot;
+  code: string;
+  createdBy: string;
+}
+
+export async function fetchSharedComponents(conversationId: string): Promise<SharedComponentRow[]> {
+  const sb = requireSupabase();
+  const { data, error } = await sb
+    .from("shared_components")
+    .select("component_id, label, slot, code, created_by")
+    .eq("conversation_id", conversationId)
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return (data ?? []).map((r) => ({
+    id: r.component_id as string,
+    label: r.label as string,
+    slot: r.slot as CustomComponentSlot,
+    code: r.code as string,
+    createdBy: r.created_by as string,
+  }));
+}
+
+export async function fetchSharedComponentState(
+  conversationId: string,
+): Promise<Record<string, unknown>> {
+  const sb = requireSupabase();
+  const { data, error } = await sb
+    .from("shared_component_state")
+    .select("component_id, state")
+    .eq("conversation_id", conversationId);
+  if (error) throw error;
+  return Object.fromEntries((data ?? []).map((r) => [r.component_id as string, r.state]));
+}
+
+/** Upsert on (conversation_id, component_id): re-issuing the same id is how an
+ *  instruction MODIFIES an existing shared component rather than duplicating it. */
+export async function saveSharedComponent(
+  conversationId: string,
+  userId: string,
+  component: { id: string; label: string; slot: CustomComponentSlot; code: string },
+) {
+  const sb = requireSupabase();
+  const { error } = await sb.from("shared_components").upsert(
+    {
+      conversation_id: conversationId,
+      component_id: component.id,
+      label: component.label,
+      slot: component.slot,
+      code: component.code,
+      created_by: userId,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "conversation_id,component_id" },
+  );
+  if (error) throw error;
+}
+
+/** A real delete, not a soft one. The state row goes with it via the composite
+ *  foreign key's ON DELETE CASCADE — a re-added component of the same name
+ *  starts fresh rather than inheriting a stale board. */
+export async function deleteSharedComponent(conversationId: string, componentId: string) {
+  const sb = requireSupabase();
+  const { error } = await sb
+    .from("shared_components")
+    .delete()
+    .eq("conversation_id", conversationId)
+    .eq("component_id", componentId);
+  if (error) throw error;
+}
+
+/** The write behind `setSharedState` inside a compiled component — one move in
+ *  a game, one item ticked off a list. Deliberately writes only the state
+ *  table, so a move doesn't rewrite (or re-broadcast) the component's source. */
+export async function writeSharedComponentState(
+  conversationId: string,
+  componentId: string,
+  userId: string,
+  state: unknown,
+) {
+  const sb = requireSupabase();
+  const { error } = await sb.from("shared_component_state").upsert(
+    {
+      conversation_id: conversationId,
+      component_id: componentId,
+      state: state as never,
+      updated_by: userId,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "conversation_id,component_id" },
+  );
+  if (error) throw error;
+}
+
+// ---------------------------------------------------------------------------
 // Realtime
 // ---------------------------------------------------------------------------
 
@@ -273,6 +375,35 @@ export function subscribeConversation(conversationId: string, onChange: () => vo
       console.log("[realtime] reactions change:", payload);
       onChange();
     })
+    // Shared components and their state ride the same channel as messages —
+    // without these two, the other person's move in a two-player game only
+    // appears when something else happens to trigger a refetch.
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "shared_components",
+        filter: `conversation_id=eq.${conversationId}`,
+      },
+      (payload) => {
+        console.log("[realtime] shared_components change:", payload);
+        onChange();
+      },
+    )
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "shared_component_state",
+        filter: `conversation_id=eq.${conversationId}`,
+      },
+      (payload) => {
+        console.log("[realtime] shared_component_state change:", payload);
+        onChange();
+      },
+    )
     .subscribe((status) => {
       console.log(`[realtime] subscription status: ${status}`);
     });

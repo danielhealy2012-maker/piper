@@ -13,6 +13,7 @@ import { generateBackgroundImage } from "../lib/image";
 import { classifyInstruction, genresPresentInSpec } from "./classify";
 import { extractJson } from "./json";
 import {
+  CUSTOM_COMPONENT_SHAPE,
   GENRE_NAMES,
   SPECIALIST_SECTIONS,
   expandGenres,
@@ -689,7 +690,7 @@ export function buildSystemPrompt(genres?: Set<Genre> | null): string {
     closingGuidance,
     "",
     "The full spec shape is:",
-    '{"version":1,"theme":{...all 20 tokens...},"slots":{"messageActions":[],"composerActions":[],"headerActions":[]},"customCSSText":"","customCSS":{"bubbleOutgoing":{},"bubbleIncoming":{},"background":{},"header":{}},"customEffects":{"onLoad":null,"onMessageReceived":null,"onMessageSent":null,"onReaction":null},"customComponents":[]}',
+    `{"version":1,"theme":{...all 20 tokens...},"slots":{"messageActions":[],"composerActions":[],"headerActions":[]},"customCSSText":"","customCSS":{"bubbleOutgoing":{},"bubbleIncoming":{},"background":{},"header":{}},"customEffects":{"onLoad":null,"onMessageReceived":null,"onMessageSent":null,"onReaction":null},"customComponents":[${CUSTOM_COMPONENT_SHAPE}]}`,
     "",
     "Start from the current spec the user provides, apply the instruction, and keep everything else unchanged.",
     "",
@@ -834,8 +835,19 @@ async function validateCustomComponents(result: GenerateResult): Promise<Generat
   for (const c of result.spec.customComponents) {
     try {
       const Comp = compileCustomComponent(babel, c.code);
+      // sharedState is deliberately null here — that's its real value before
+      // anyone has written to it, so this smoke test also catches the very
+      // common "read .foo off sharedState without a null guard" crash, which
+      // would otherwise only surface on the first render of a brand-new
+      // shared widget.
       ReactDOMServer.renderToStaticMarkup(
-        React.createElement(Comp, { messages: [], viewerId: "", sendMessage: () => {} }),
+        React.createElement(Comp, {
+          messages: [],
+          viewerId: "",
+          sendMessage: () => {},
+          sharedState: null,
+          setSharedState: () => {},
+        }),
       );
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);

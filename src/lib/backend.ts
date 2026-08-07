@@ -15,9 +15,16 @@ import {
   toggleReaction,
   updateConversationTitle,
 } from "./db";
+import {
+  deleteSharedComponent,
+  fetchSharedComponentState,
+  fetchSharedComponents,
+  saveSharedComponent,
+  writeSharedComponentState,
+} from "./db";
 import { requireSupabase } from "./supabase";
 import { formatTime, type ChatMessage } from "./types";
-import { DEFAULT_SPEC, type Spec } from "../engine/spec";
+import { DEFAULT_SPEC, type CustomComponentSlot, type Spec } from "../engine/spec";
 import { SEED_MESSAGES, USERS } from "../data/seed";
 
 export interface DisplayUser {
@@ -58,6 +65,30 @@ export interface ChatBackend {
   unreactAll(id: string): Promise<string[]>;
   updateTitle(title: string): Promise<void>;
   clearMessages(): Promise<void>;
+
+  // --- SHARED custom components -------------------------------------------
+  // Conversation-scoped, unlike loadTheme/saveTheme above which are per-user.
+  // `subscribe` fires on changes to these too, so a widget one person adds —
+  // and every state change inside it — reaches the other person live.
+  fetchSharedComponents(): Promise<SharedComponentRecord[]>;
+  /** Upsert by id: re-saving the same id modifies rather than duplicates. */
+  saveSharedComponent(component: SharedComponentDefinition): Promise<void>;
+  removeSharedComponent(id: string): Promise<void>;
+  /** Every component's shared state, keyed by component id. */
+  fetchSharedState(): Promise<Record<string, unknown>>;
+  /** The write behind `setSharedState` inside a compiled component. */
+  setSharedState(componentId: string, state: unknown): Promise<void>;
+}
+
+export interface SharedComponentDefinition {
+  id: string;
+  label: string;
+  slot: CustomComponentSlot;
+  code: string;
+}
+
+export interface SharedComponentRecord extends SharedComponentDefinition {
+  createdBy: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -67,7 +98,12 @@ export interface ChatBackend {
 interface LocalState {
   messages: ChatMessage[];
   deleted: ChatMessage[];
+  /** Keyed by viewer: personal, like member_theme's RLS makes it in production. */
   themes: Record<string, Spec>;
+  /** NOT keyed by viewer — that's the whole point. Both demo viewers read the
+   *  same rows, so flipping "Viewing as" is a real test of the shared path. */
+  sharedComponents: SharedComponentRecord[];
+  sharedState: Record<string, unknown>;
 }
 
 const localState: LocalState = {
@@ -81,6 +117,8 @@ const localState: LocalState = {
   })),
   deleted: [],
   themes: {},
+  sharedComponents: [],
+  sharedState: {},
 };
 
 const localListeners = new Set<() => void>();
@@ -187,6 +225,32 @@ export function createLocalBackend(viewerId: string): ChatBackend {
       localState.messages = [];
       notifyLocal();
     },
+    async fetchSharedComponents() {
+      return localState.sharedComponents.map((c) => ({ ...c }));
+    },
+    async saveSharedComponent(component) {
+      const existing = localState.sharedComponents.findIndex((c) => c.id === component.id);
+      const record: SharedComponentRecord = { ...component, createdBy: viewerId };
+      localState.sharedComponents =
+        existing === -1
+          ? [...localState.sharedComponents, record]
+          : localState.sharedComponents.map((c, i) => (i === existing ? { ...c, ...component } : c));
+      notifyLocal();
+    },
+    async removeSharedComponent(id) {
+      localState.sharedComponents = localState.sharedComponents.filter((c) => c.id !== id);
+      // Matches the ON DELETE CASCADE on shared_component_state: a component
+      // re-added under the same name starts fresh, not on a stale board.
+      delete localState.sharedState[id];
+      notifyLocal();
+    },
+    async fetchSharedState() {
+      return { ...localState.sharedState };
+    },
+    async setSharedState(componentId, state) {
+      localState.sharedState = { ...localState.sharedState, [componentId]: state };
+      notifyLocal();
+    },
   };
 }
 
@@ -256,5 +320,11 @@ export function createSupabaseBackend(conversationId: string, userId: string): C
     updateTitle: (title) => updateConversationTitle(conversationId, title),
     clearMessages: () => clearConversationMessages(conversationId),
     removeAllBy: (authorId) => deleteAllMessagesByAuthor(conversationId, authorId),
+    fetchSharedComponents: () => fetchSharedComponents(conversationId),
+    saveSharedComponent: (component) => saveSharedComponent(conversationId, userId, component),
+    removeSharedComponent: (id) => deleteSharedComponent(conversationId, id),
+    fetchSharedState: () => fetchSharedComponentState(conversationId),
+    setSharedState: (componentId, state) =>
+      writeSharedComponentState(conversationId, componentId, userId, state),
   };
 }

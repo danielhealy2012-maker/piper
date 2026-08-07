@@ -1,4 +1,4 @@
-import { Component as ReactClassComponent, useMemo, type ReactNode } from "react";
+import { Component as ReactClassComponent, useCallback, useMemo, useState, type ReactNode } from "react";
 import type { CustomComponent } from "../engine/spec";
 import { compileCustomComponent, useBabel } from "./customComponentRuntime";
 
@@ -8,6 +8,11 @@ interface Props {
   viewerId: string;
   sendMessage: (text: string) => void;
   onRemove: (id: string) => void;
+  /** For scope:"shared" components: the live value from the conversation, and
+   *  the writer that syncs it to the other person. Omitted for personal ones,
+   *  which fall back to local state below. */
+  sharedState?: unknown;
+  onSetSharedState?: (componentId: string, next: unknown) => void;
 }
 
 // Error boundaries must be class components — this only catches RENDER-time
@@ -45,8 +50,38 @@ class ComponentErrorBoundary extends ReactClassComponent<
  * otherwise cover or displace a same-flow button, which is exactly what
  * made a generated widget briefly unremovable in practice.
  */
-export function CustomComponentSlot({ spec, messages, viewerId, sendMessage, onRemove }: Props) {
+export function CustomComponentSlot({
+  spec,
+  messages,
+  viewerId,
+  sendMessage,
+  onRemove,
+  sharedState,
+  onSetSharedState,
+}: Props) {
   const babel = useBabel();
+
+  // A personal component still gets the sharedState prop pair, backed by
+  // ordinary local state. The model is told which scope to use, but if it
+  // marks something personal and then writes against setSharedState anyway,
+  // the widget should still work locally rather than crash on an undefined
+  // function — the prop contract is uniform, only the backing store differs.
+  const [localState, setLocalState] = useState<unknown>(null);
+  const isShared = spec.scope === "shared" && !!onSetSharedState;
+
+  // Accepts a value or an updater function, matching useState's contract —
+  // which is what a component doing `setSharedState(s => ({...s, ...}))` will
+  // reach for by habit, and what makes concurrent moves less lossy than
+  // read-modify-write against a stale render's copy.
+  const setSharedState = useCallback(
+    (next: unknown) => {
+      const current = isShared ? sharedState : localState;
+      const resolved = typeof next === "function" ? (next as (prev: unknown) => unknown)(current) : next;
+      if (isShared) onSetSharedState?.(spec.id, resolved);
+      else setLocalState(resolved);
+    },
+    [isShared, sharedState, localState, onSetSharedState, spec.id],
+  );
 
   const result = useMemo<
     { kind: "ok"; Comp: ReturnType<typeof compileCustomComponent> } | { kind: "error"; error: string } | null
@@ -69,7 +104,13 @@ export function CustomComponentSlot({ spec, messages, viewerId, sendMessage, onR
         </span>
       ) : (
         <ComponentErrorBoundary label={spec.label}>
-          <result.Comp messages={messages} viewerId={viewerId} sendMessage={sendMessage} />
+          <result.Comp
+            messages={messages}
+            viewerId={viewerId}
+            sendMessage={sendMessage}
+            sharedState={isShared ? sharedState : localState}
+            setSharedState={setSharedState}
+          />
         </ComponentErrorBoundary>
       )}
       <button

@@ -53,6 +53,12 @@ export const GENRES = {
     routerHint:
       'real interactive widgets with their own state — timers, counters, calculators, mini-games (including tic-tac-toe), to-do lists, scoreboards, and removing/modifying ones already added',
   },
+  sharedState: {
+    classifierHint:
+      'the widget is something BOTH people use together, where each person needs to see what the other did — a two-player game, a shared to-do list, a live poll with real tallied votes, a collaborative whiteboard, a shared counter or scoreboard. The giveaway is language like "we", "us", "together", "each other", "both of us", or any game/list/vote that would be pointless if only one person could see it.',
+    routerHint:
+      'shared, live-synced widgets both people can use at once — two-player games, shared to-do lists, live polls with real votes, collaborative drawing',
+  },
   imageGeneration: {
     classifierHint:
       'the background is described as real pictorial artwork that the 8 bundled illustrated scenes cannot cover — a specific animal, character, object, place, or art style ("a cartoon dog", "watercolor mountains", "pixel art city").',
@@ -75,6 +81,9 @@ export function isGenre(value: unknown): value is Genre {
 const IMPLIES: Partial<Record<Genre, Genre[]>> = {
   animation: ["customCSS"],
   ambientEffect: ["animation", "customCSS"],
+  // Shared state is a property OF a component — there's nothing else it can
+  // attach to, so the component contract always comes with it.
+  sharedState: ["interactiveComponent"],
 };
 
 /** Expands a classified genre set with everything those genres depend on. */
@@ -153,12 +162,29 @@ export const SPECIALIST_SECTIONS: SpecialistSection[] = [
     build: () => [
       '`customComponents` — a whole new INTERACTIVE widget, for requests the other hatches can\'t reach because they need real state/behavior, not just style or a one-shot effect: a countdown timer, a small calculator, a mini game, anything with its own ongoing UI. An array of up to 5 objects: {"id": <short stable slug, e.g. "countdown-timer">, "label": <short human name shown if it errors, e.g. "Countdown Timer">, "slot": "composerActions"|"headerActions"|"standalone", "code": <string, see contract below>}.',
       "   - CODE CONTRACT (strict — anything else fails to compile): the string must define EXACTLY one top-level `function Component(props) { ... }` using JSX to return its UI, and nothing else — no import/export statements, no code outside that one function. React and the hooks useState/useEffect/useRef are already in scope — call them directly (`useState(0)`, not `React.useState(0)`).",
-      '   - `props` gives you: `messages` (the current message list, read-only), `viewerId` (string), `sendMessage(text)` (a function — call it to send a real message into the chat, e.g. for a timer that announces when it hits zero).',
+      '   - `props` gives you: `messages` (the current message list, read-only), `viewerId` (string), `sendMessage(text)` (a function — call it to send a real message into the chat, e.g. for a timer that announces when it hits zero), plus `sharedState`/`setSharedState` (see SCOPE below).',
+      '   - SCOPE — every component needs a `"scope"` field, `"personal"` or `"shared"`:',
+      '     * `"personal"` (the default) renders only for the person who asked for it, and its state is private to them. Correct for anything one-sided: a calculator, a countdown timer, a unit converter, a personal note pad.',
+      '     * `"shared"` renders for BOTH people in the conversation and is kept in sync live. Correct — and REQUIRED — for anything the two people do together: a two-player game, a shared to-do list, a live poll with real votes, a collaborative drawing surface, a shared counter or scoreboard. A game marked "personal" is broken by construction: the other person cannot see the board at all, so there is nobody to play against.',
       '   - Pick `slot` by size: "composerActions" or "headerActions" for something small and pill-shaped (a button, a live number); "standalone" for something that needs more room (a small canvas, a multi-button calculator) — it gets its own full-width strip.',
       "   - Keep it robust: clean up every `setInterval`/`setTimeout` in a `useEffect` cleanup function so it doesn't run forever after the user moves on; avoid unbounded loops.",
       '   - SIZE IS ENFORCED, not just a suggestion: "standalone" renders in a strip capped at 240px tall (scrolls internally past that) — never use `position: fixed` or a large explicit width/height inside your JSX, since that can visually cover the chat instead of sitting inside your allotted space. For a grid-based widget (tic-tac-toe, a small game board), keep each cell small (e.g. 32-40px) so the whole board comfortably fits well under the height cap — do not assume you have the whole screen.',
       '   - To ADD one: include it in `customComponents` alongside any existing ones that should stay (you are given the current spec, including any that already exist — echo them back unchanged unless the instruction is about them specifically). To MODIFY one: keep its `id`, change what needs to change. To REMOVE one: simply leave it out of the array — but note the user ALSO has a direct "✕" button on every component that removes it instantly without needing you, so don\'t worry about being asked to remove something that may already be gone.',
       '   - Example minimal `code` value for "add a 60 second countdown timer": "function Component({ sendMessage }) {\\n  const [seconds, setSeconds] = useState(60);\\n  useEffect(() => {\\n    if (seconds <= 0) { sendMessage(\'Time\\\'s up!\'); return; }\\n    const id = setTimeout(() => setSeconds(s => s - 1), 1000);\\n    return () => clearTimeout(id);\\n  }, [seconds]);\\n  return <span>⏱ {seconds}s</span>;\\n}"',
+    ],
+  },
+  {
+    at: "hatches",
+    needs: ["sharedState"],
+    build: () => [
+      'SHARED STATE (for the `scope: "shared"` component above) — `useState` is per-person and per-tab, so a board kept in `useState` shows one player their own moves and never the other\'s. Use the `sharedState`/`setSharedState` props instead; they are the same value for both people and update live in each other\'s browser.',
+      "   - `props.sharedState` is whatever was last written (any JSON value: object, array, number, string). It is `null` until the first write, so ALWAYS handle that: `const board = props.sharedState ?? { squares: Array(9).fill(null), turn: 'X' };`",
+      "   - `props.setSharedState(next)` writes it for both people. It accepts a value or an updater function exactly like `useState`'s setter — prefer the updater form (`setSharedState(prev => ({ ...prev, squares }))`) so a move isn't computed from a stale copy while the other person is also playing.",
+      "   - Store the WHOLE shared value each time — this replaces, it does not merge.",
+      "   - Use `props.viewerId` to tell the two people apart (whose turn it is, who added a to-do item, which colour a stroke is). Assign identities by writing them into the shared state on first use rather than assuming who moves first.",
+      "   - Do NOT mirror shared state into `useState` and write back on every render — that's a feedback loop between the two browsers. Read from `props.sharedState` directly and write only in response to a real user action (a click, a submit).",
+      "   - There is no locking: two simultaneous writes resolve last-write-wins. That's fine for turn-taking games and lists; just don't build something that depends on both people writing the same instant.",
+      '   - Example for a shared counter: "function Component({ sharedState, setSharedState }) {\\n  const count = sharedState?.count ?? 0;\\n  return <button onClick={() => setSharedState(prev => ({ count: (prev?.count ?? 0) + 1 }))}>Tapped {count} times</button>;\\n}"',
     ],
   },
   {
@@ -182,3 +208,8 @@ export function hatchNamesFor(active: Set<Genre>): string[] {
   if (active.has("interactiveComponent")) names.push("customComponents");
   return names;
 }
+
+/** The `customComponents` entry shape shown in the spec skeleton, which grew a
+ *  `scope` field once components could be conversation-scoped. */
+export const CUSTOM_COMPONENT_SHAPE =
+  '{"id":...,"label":...,"slot":...,"code":...,"scope":"personal"|"shared"}';

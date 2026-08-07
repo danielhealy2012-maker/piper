@@ -45,6 +45,27 @@ export interface DbPollVote {
   option_index: number;
 }
 
+/** A conversation-scoped custom component (supabase/migrations/0003). Mirrors
+ *  the spec's CustomComponent, plus the sync/attribution columns. */
+export interface DbSharedComponent {
+  conversation_id: string;
+  component_id: string;
+  label: string;
+  slot: string;
+  code: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DbSharedComponentState {
+  conversation_id: string;
+  component_id: string;
+  state: unknown;
+  updated_by: string | null;
+  updated_at: string;
+}
+
 // The view model the Chat component renders. Keeps the same shape the existing
 // components already expect (id/text/time) so the renderer didn't have to change,
 // plus the multiplayer fields.

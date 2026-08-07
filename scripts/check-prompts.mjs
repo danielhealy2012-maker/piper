@@ -90,6 +90,7 @@ const MARKERS = {
   ambientEffect: "onLoad` is DIFFERENT",
   reactiveEffect: "are ONE-SHOT",
   interactiveComponent: "CODE CONTRACT",
+  sharedState: "SHARED STATE",
   imageGeneration: "IMAGE GENERATION:",
 };
 
@@ -104,7 +105,7 @@ group("base prompt survives narrowing");
     ["clause binding rule", "white background with blue bubbles"],
     ["slot catalog", "Slots (each action has the shape"],
     ["legibility rules", "LEGIBILITY IS NON-NEGOTIABLE"],
-    ["full spec shape", '"customComponents":[]'],
+    ["full spec shape", '"customComponents":['],
     ["response envelope", '"backgroundImagePrompt"'],
     ["honest-limitation rule", "explain honestly in `limitation`"],
   ];
@@ -210,6 +211,44 @@ group("current spec content keeps its contract");
 
   const withCss = { ...DEFAULT_SPEC, customCSS: { bubbleOutgoing: { boxShadow: "0 0 8px red" } } };
   ok("custom CSS reports customCSS", genresPresentInSpec(withCss).has("customCSS"));
+}
+
+// -- 7b. Shared components carry their own contract ---------------------------
+//
+// A game marked scope:"personal" is broken by construction — the other person
+// can't see the board — and a shared component written against useState shows
+// each player only their own moves. Both failures look like working code and
+// only surface when a second person opens the chat, so the prompt must state
+// the scope rule and the sharedState contract together.
+group("shared components get the scope + sync contract");
+{
+  ok("sharedState implies interactiveComponent", expandGenres(["sharedState"]).has("interactiveComponent"));
+
+  const shared = buildSystemPrompt(expandGenres(["sharedState"]));
+  ok("shared prompt explains the scope field", shared.includes('"scope"'));
+  ok("shared prompt warns a personal game is broken", shared.includes("broken by construction"));
+  ok("shared prompt gives the null-before-first-write rule", shared.includes("null` until the first write"));
+  ok("shared prompt warns against mirroring into useState", shared.includes("feedback loop"));
+
+  // The reverse: an ordinary personal widget shouldn't pay for any of this.
+  const personalOnly = buildSystemPrompt(expandGenres(["interactiveComponent"]));
+  ok("a plain widget prompt omits the sync contract", !personalOnly.includes(MARKERS.sharedState));
+  ok("but still describes scope, since every component needs one", personalOnly.includes('"scope"'));
+
+  // The spec skeleton has to show `scope`, or the model omits it and every
+  // component silently defaults to personal — including the games.
+  ok("spec skeleton shows the scope field", personalOnly.includes('"scope":"personal"|"shared"'));
+
+  const withSharedGame = {
+    ...DEFAULT_SPEC,
+    customComponents: [
+      { id: "ttt", label: "Tic Tac Toe", slot: "standalone", scope: "shared", code: "function Component() { return <div/>; }" },
+    ],
+  };
+  ok(
+    "an existing shared component keeps its contract on the next instruction",
+    genresPresentInSpec(withSharedGame).has("sharedState"),
+  );
 }
 
 // -- 8. The classifier can name every genre ----------------------------------

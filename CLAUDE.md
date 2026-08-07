@@ -24,7 +24,8 @@ invite-code handling, and picking the backend.
 importantly, by Postgres RLS in `supabase/migrations/0001_init.sql`.
 - *Personal* (`member_theme`, `personal_overlays`): owner-only for read AND write. This
   is what makes "my appearance changes only show up for me" actually true.
-- *Shared* (`messages`, `reactions`, `polls`, `poll_votes`): any conversation member.
+- *Shared* (`messages`, `reactions`, `polls`, `poll_votes`, `shared_components`,
+  `shared_component_state`): any conversation member.
 - *Own-content-only*: message edit/delete require `author_id = auth.uid()`. The
   orchestrator also checks `message.isMine` first so the user gets a real explanation
   instead of a 403.
@@ -190,6 +191,54 @@ auto-scroll-to-bottom effect — without it a new message is appended but invisi
 
 Message content is NOT persisted in demo mode (resets on reload); in multiplayer it lives
 in Postgres. Theme specs persist per user in both modes.
+
+## Two scopes for custom components (`supabase/migrations/0003_shared_components.sql`)
+
+Every `customComponent` carries `scope: "personal" | "shared"`.
+
+- **personal** (default, the original behavior) lives inside the spec in `member_theme`,
+  owner-only — a calculator, a countdown timer.
+- **shared** lives in the conversation-level `shared_components` table, readable and
+  writable by any member, synced through the same Realtime channel as messages. Its state
+  lives in a SEPARATE `shared_component_state` table, because state changes on a different
+  timescale than code does (a board is defined once, then written on every move) and
+  Realtime broadcasts the whole changed row — keeping them together would re-send the
+  component's entire source on every move.
+
+Why this had to exist: a generated tic-tac-toe board rendered only for the person who
+asked for it, and its state was local `useState` inside the compiled component, so nothing
+about it synced. Two-player games, shared to-do lists, live polls and collaborative drawing
+are all impossible without it.
+
+**`Workspace.tsx` keeps the two scopes separate but shows the model one merged view.**
+`composedSpec` = personal spec + the conversation's shared components; that's what renders,
+what the keyword stub sees, and what's sent to `generateSpec` — otherwise an instruction
+like "make the tic-tac-toe board bigger" would look to the model like the thing doesn't
+exist. `persistSpec()` is the single write path and the only place they're split again:
+personal content to `member_theme`, `scope:"shared"` components to the conversation table.
+Routing on the way OUT rather than asking callers to pre-split is deliberate — the keyword
+stub `structuredClone`s whatever spec it's handed, so it would otherwise copy a shared
+component into `member_theme` and leave a private duplicate behind.
+
+**Compiled components get `sharedState`/`setSharedState` props** alongside `messages`/
+`viewerId`/`sendMessage`. Personal components get them too, backed by ordinary local
+state — a uniform prop contract means a component the model marked personal but wrote
+against `setSharedState` degrades to "works, doesn't sync" instead of crashing on an
+undefined function. `setSharedState` accepts a value or an updater function, matching
+`useState`. Writes are optimistic locally, then propagate via Realtime, same as messages.
+
+**No approval gate, by explicit decision.** Whatever one person sets applies for both, the
+same trust model messages and reactions already have. This carries a failure shape the
+personal scope didn't: a broken or hostile shared component now misbehaves for BOTH people.
+Confirmed as acceptable; the per-component ✕ is the escape hatch, and it removes a shared
+component for both — deliberately, since a broken shared widget is broken for both and
+neither person should have to wait on the other to kill it. Removal is undoable, and the
+undo re-seeds the state the delete cascaded away (otherwise undoing the removal of a game
+brings the board back empty, which is silent data loss dressed up as a successful undo).
+
+`themeMutation: "reset"`/`"randomize"` deliberately KEEP shared components: "reset my
+theme" is a personal appearance action, and silently deleting a game the other person is
+using is a much bigger consequence than the request implies.
 
 ## The genre catalog (`src/engine/genres.ts`) — one source of truth for capabilities
 

@@ -24,6 +24,19 @@ export function useBabel(): typeof import("@babel/standalone") | null {
   return babel;
 }
 
+/** Every prop a compiled component is handed. `sharedState`/`setSharedState`
+ *  are present for personal components too, backed by ordinary local state —
+ *  a uniform prop contract means a component the model marked personal but
+ *  wrote against sharedState degrades to "works, just doesn't sync" instead
+ *  of crashing on an undefined function. */
+export interface CustomComponentProps {
+  messages: unknown[];
+  viewerId: string;
+  sendMessage: (text: string) => void;
+  sharedState: unknown;
+  setSharedState: (next: unknown) => void;
+}
+
 /**
  * Compiles model-authored source into a real React component. Contract with
  * the model (see generate.ts's system prompt): the code must define exactly
@@ -37,7 +50,7 @@ export function useBabel(): typeof import("@babel/standalone") | null {
 export function compileCustomComponent(
   babel: typeof import("@babel/standalone"),
   code: string,
-): ComponentType<{ messages: unknown[]; viewerId: string; sendMessage: (text: string) => void }> {
+): ComponentType<CustomComponentProps> {
   // Defensive strip: the model is told never to use export/import, but a
   // stray `export default` would otherwise be a SyntaxError inside
   // `new Function`'s body (which can't contain top-level module syntax).
@@ -73,5 +86,5 @@ export function compileCustomComponent(
   if (typeof built !== "function") {
     throw new Error('component code did not define a function named "Component"');
   }
-  return built as ComponentType<{ messages: unknown[]; viewerId: string; sendMessage: (text: string) => void }>;
+  return built as ComponentType<CustomComponentProps>;
 }

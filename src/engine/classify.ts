@@ -91,5 +91,10 @@ export function genresPresentInSpec(spec: Spec): Set<Genre> {
   if (effects.onLoad) present.add("ambientEffect");
   if (effects.onMessageReceived || effects.onMessageSent || effects.onReaction) present.add("reactiveEffect");
   if (spec.customComponents.length > 0) present.add("interactiveComponent");
+  // A shared component in play means the next instruction could be about it
+  // ("make the board bigger"), and rewriting one without the shared-state
+  // contract is how a working game gets turned back into a personal one that
+  // only its author can see.
+  if (spec.customComponents.some((c) => c.scope === "shared")) present.add("sharedState");
   return expandGenres(present);
 }

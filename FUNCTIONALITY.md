@@ -91,6 +91,9 @@
 | Classify-then-dispatch theming | ✅ | Theme generation is two calls: a cheap classifier picks which mechanisms the request needs, then the specialist prompt carries only those (51–70% of the old every-mechanism prompt) |
 | Classifier degradation | ✅ | A failed classifier call falls back to the full prompt; a no-op result escalates to the full prompt + `claude-opus-4-8`, so a misclassification costs latency, not capability |
 | Capability catalog | ✅ | `engine/genres.ts` is the single source for what `themeInstruction` can produce; the router's capability list is generated from it, so it can't drift behind the engine and reject things that work |
+| Shared custom components | ✅ | `scope:"shared"` components live in a conversation table, render for both people, and sync via Realtime — the prerequisite for two-player games, shared lists and live polls |
+| Shared component state | ✅ | `sharedState`/`setSharedState` props, backed by a separate state table so a move doesn't re-broadcast the component's source. Optimistic local write, last-write-wins on conflict |
+| Undo across scopes | ✅ | Removing a shared component is undoable and restores the state the delete cascaded away, not just the component |
 
 ### Infrastructure & Security
 
