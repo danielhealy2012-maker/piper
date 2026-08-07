@@ -96,6 +96,9 @@
 | Undo across scopes | ✅ | Removing a shared component is undoable and restores the state the delete cascaded away, not just the component |
 | Shared to-do lists | ✅ | Emergent from the shared-state primitive — generated on request, not hand-built. Verified through the full router → classify → generate → compile → render path |
 | Live polls with real votes | ✅ | "add a poll" now builds a shared component both people vote in, with counts in `sharedState`. The old static `Poll` mockup is deprecated: still valid in saved specs, no longer offered to the model |
+| Two-player mini-games | ✅ | Tic-tac-toe, word games and trivia generate as shared components using `setSharedState` for turn-taking. Emergent from the primitive, not hand-built |
+| Shared whiteboard / drawing | ✅ | Generates using the atomic `appendSharedState` so simultaneous strokes from both people survive. **Needs migration 0004** |
+| Concurrent-safe shared writes | ✅ | `appendSharedState(listKey, item)` appends inside Postgres in one statement. `setSharedState` still replaces (correct for turn-based), so the model is told: if both people could act at the same instant, append |
 | Conversational memory | ✅ | The last 8 instruction/outcome pairs ride along with `/api/route` and `/api/generate`, so "make it more like that", "a bit less", "undo that and try again" resolve. Session-only — resets on reload, like the change log always has |
 
 ### Infrastructure & Security

@@ -236,6 +236,20 @@ against `setSharedState` degrades to "works, doesn't sync" instead of crashing o
 undefined function. `setSharedState` accepts a value or an updater function, matching
 `useState`. Writes are optimistic locally, then propagate via Realtime, same as messages.
 
+**Two write primitives, and picking the wrong one loses data.** `setSharedState(next)`
+REPLACES the whole value — correct for turn-taking, where only one person acts at a time,
+but last-write-wins the moment both write at once. `appendSharedState(listKey, item)`
+appends to an array inside the state *in one Postgres statement*
+(`append_shared_component_state`, migration 0004), so concurrent writers serialize instead
+of clobbering. A collaborative whiteboard is the case that forces this: both people drawing
+at once each compute "existing strokes + mine" from their own last-seen copy, so whoever
+writes second silently erases the other's stroke — and no amount of client-side care fixes
+it, because the read and the write are separate round trips. The model is told the rule of
+thumb: if two people could reasonably act at the same instant, append; if the value is
+inherently turn-based or single-valued, replace. The appended list is size-bounded
+server-side (oldest entries drop past ~256KB), because every append re-broadcasts the whole
+row over Realtime and an unbounded blob turns into multi-megabyte payloads per pen stroke.
+
 **No approval gate, by explicit decision.** Whatever one person sets applies for both, the
 same trust model messages and reactions already have. This carries a failure shape the
 personal scope didn't: a broken or hostile shared component now misbehaves for BOTH people.

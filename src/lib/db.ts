@@ -383,6 +383,32 @@ export async function writeSharedComponentState(
   if (error) throw error;
 }
 
+/**
+ * Atomic append to a list inside a component's shared state — the write
+ * behind `appendSharedState` (supabase/migrations/0004).
+ *
+ * Needed because `writeSharedComponentState` above replaces the whole blob:
+ * two people drawing on a whiteboard at the same time each compute "existing
+ * strokes + mine" from their own last-seen copy, and whoever writes second
+ * erases the other's stroke. The append happens inside the database in one
+ * statement, so concurrent writers serialize instead of clobbering.
+ */
+export async function appendSharedComponentState(
+  conversationId: string,
+  componentId: string,
+  listKey: string,
+  item: unknown,
+): Promise<void> {
+  const sb = requireSupabase();
+  const { error } = await sb.rpc("append_shared_component_state", {
+    conv: conversationId,
+    comp: componentId,
+    list_key: listKey,
+    item: item as never,
+  });
+  if (error) throw error;
+}
+
 // ---------------------------------------------------------------------------
 // Realtime
 // ---------------------------------------------------------------------------

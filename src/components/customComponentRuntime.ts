@@ -35,6 +35,10 @@ export interface CustomComponentProps {
   sendMessage: (text: string) => void;
   sharedState: unknown;
   setSharedState: (next: unknown) => void;
+  /** Atomic append to a list inside the shared state. Unlike setSharedState,
+   *  two people appending at the same moment both survive — see
+   *  supabase/migrations/0004. */
+  appendSharedState: (listKey: string, item: unknown) => void;
 }
 
 /**

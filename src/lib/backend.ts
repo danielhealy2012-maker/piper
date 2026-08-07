@@ -14,8 +14,7 @@ import {
   subscribeConversation,
   toggleReaction,
   updateConversationTitle,
-} from "./db";
-import {
+  appendSharedComponentState,
   deleteSharedComponent,
   fetchSharedComponentState,
   fetchSharedComponents,
@@ -78,6 +77,10 @@ export interface ChatBackend {
   fetchSharedState(): Promise<Record<string, unknown>>;
   /** The write behind `setSharedState` inside a compiled component. */
   setSharedState(componentId: string, state: unknown): Promise<void>;
+  /** The write behind `appendSharedState`. Atomic server-side append to a
+   *  list inside the state, so two people writing at once don't clobber
+   *  each other the way a whole-blob replace does. */
+  appendSharedState(componentId: string, listKey: string, item: unknown): Promise<void>;
 }
 
 export interface SharedComponentDefinition {
@@ -251,6 +254,16 @@ export function createLocalBackend(viewerId: string): ChatBackend {
       localState.sharedState = { ...localState.sharedState, [componentId]: state };
       notifyLocal();
     },
+    async appendSharedState(componentId, listKey, item) {
+      // Mirrors the SQL function: append to the list, creating it if absent.
+      const current = (localState.sharedState[componentId] ?? {}) as Record<string, unknown>;
+      const list = Array.isArray(current[listKey]) ? (current[listKey] as unknown[]) : [];
+      localState.sharedState = {
+        ...localState.sharedState,
+        [componentId]: { ...current, [listKey]: [...list, item] },
+      };
+      notifyLocal();
+    },
   };
 }
 
@@ -326,5 +339,7 @@ export function createSupabaseBackend(conversationId: string, userId: string): C
     fetchSharedState: () => fetchSharedComponentState(conversationId),
     setSharedState: (componentId, state) =>
       writeSharedComponentState(conversationId, componentId, userId, state),
+    appendSharedState: (componentId, listKey, item) =>
+      appendSharedComponentState(conversationId, componentId, listKey, item),
   };
 }

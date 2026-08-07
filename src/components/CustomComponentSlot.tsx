@@ -13,6 +13,7 @@ interface Props {
    *  which fall back to local state below. */
   sharedState?: unknown;
   onSetSharedState?: (componentId: string, next: unknown) => void;
+  onAppendSharedState?: (componentId: string, listKey: string, item: unknown) => void;
 }
 
 // Error boundaries must be class components — this only catches RENDER-time
@@ -58,6 +59,7 @@ export function CustomComponentSlot({
   onRemove,
   sharedState,
   onSetSharedState,
+  onAppendSharedState,
 }: Props) {
   const babel = useBabel();
 
@@ -81,6 +83,23 @@ export function CustomComponentSlot({
       else setLocalState(resolved);
     },
     [isShared, sharedState, localState, onSetSharedState, spec.id],
+  );
+
+  // Personal components get a local equivalent so the prop contract stays
+  // uniform — it just has nobody to race with.
+  const appendSharedState = useCallback(
+    (listKey: string, item: unknown) => {
+      if (isShared) {
+        onAppendSharedState?.(spec.id, listKey, item);
+        return;
+      }
+      setLocalState((prev: unknown) => {
+        const current = (prev ?? {}) as Record<string, unknown>;
+        const list = Array.isArray(current[listKey]) ? (current[listKey] as unknown[]) : [];
+        return { ...current, [listKey]: [...list, item] };
+      });
+    },
+    [isShared, onAppendSharedState, spec.id],
   );
 
   const result = useMemo<
@@ -110,6 +129,7 @@ export function CustomComponentSlot({
             sendMessage={sendMessage}
             sharedState={isShared ? sharedState : localState}
             setSharedState={setSharedState}
+            appendSharedState={appendSharedState}
           />
         </ComponentErrorBoundary>
       )}

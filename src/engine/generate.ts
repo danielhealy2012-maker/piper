@@ -864,6 +864,7 @@ async function validateCustomComponents(result: GenerateResult): Promise<Generat
           sendMessage: () => {},
           sharedState: null,
           setSharedState: () => {},
+          appendSharedState: () => {},
         }),
       );
     } catch (err) {

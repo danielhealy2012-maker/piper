@@ -31,6 +31,7 @@ export interface ChatProps {
    *  writer that propagates a change to the other person. */
   sharedState?: Record<string, unknown>;
   onSetSharedState?: (componentId: string, next: unknown) => void;
+  onAppendSharedState?: (componentId: string, listKey: string, item: unknown) => void;
 }
 
 export function Chat({
@@ -46,6 +47,7 @@ export function Chat({
   onRemoveCustomComponent,
   sharedState,
   onSetSharedState,
+  onAppendSharedState,
 }: ChatProps) {
   const [draft, setDraft] = useState("");
   const theme = spec.theme;
@@ -97,6 +99,7 @@ export function Chat({
           onRemove={(id) => onRemoveCustomComponent?.(id)}
           sharedState={sharedState?.[c.id]}
           onSetSharedState={onSetSharedState}
+          onAppendSharedState={onAppendSharedState}
         />
       ));
 

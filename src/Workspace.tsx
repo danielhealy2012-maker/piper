@@ -263,6 +263,24 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
     [backend, refresh],
   );
 
+  // Deliberately NOT optimistic, unlike setSharedState above. The whole point
+  // of an append is that the authoritative order is decided server-side when
+  // writers race; guessing locally and then being corrected by the refetch
+  // would make strokes visibly jump. The realtime echo lands in well under a
+  // frame's worth of perceptible delay for this use.
+  const handleAppendSharedState = useCallback(
+    async (componentId: string, listKey: string, item: unknown) => {
+      try {
+        await backend.appendSharedState(componentId, listKey, item);
+        await refresh();
+      } catch (err) {
+        console.error("[sharedState] append failed:", err);
+        setNotice(`Couldn't sync that change (${errorMessage(err)}).`);
+      }
+    },
+    [backend, refresh],
+  );
+
   async function handleSend(text: string) {
     await backend.send(text);
     await refresh();
@@ -882,6 +900,7 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
             onRemoveCustomComponent={(id) => void removeCustomComponent(id)}
             sharedState={sharedState}
             onSetSharedState={(id, next) => void handleSetSharedState(id, next)}
+            onAppendSharedState={(id, key, item) => void handleAppendSharedState(id, key, item)}
           />
         </div>
       </div>
