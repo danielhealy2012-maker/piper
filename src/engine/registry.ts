@@ -162,6 +162,27 @@ export const SLOTS = {
 export type SlotName = keyof typeof SLOTS;
 export const SLOT_NAMES = Object.keys(SLOTS) as SlotName[];
 
+/**
+ * Components that still VALIDATE but are no longer offered to the model.
+ *
+ * `Poll` is a dead mockup: it draws a question and options, tallies nothing,
+ * and is personal-scoped so the other person can't see it. Now that a real
+ * shared poll is buildable as a `customComponent`, handing the model a
+ * component named "Poll" meant it kept picking the fake one for "add a poll"
+ * — a silent substitution of something non-functional for the thing asked
+ * for, which is exactly what this codebase is not supposed to do. Explicit
+ * prompt warnings weren't enough; the reliable fix is to stop advertising it.
+ *
+ * Deliberately still allowed by `validateSpec`, not deleted: a saved spec
+ * that already contains one must keep validating, or `loadTheme` would reject
+ * it and silently reset that user's whole theme to defaults.
+ */
+export const DEPRECATED_COMPONENTS: readonly string[] = ["Poll"];
+
+export function isDeprecatedComponent(name: string): boolean {
+  return DEPRECATED_COMPONENTS.includes(name);
+}
+
 // Component prop schemas. Every component not listed here explicitly takes no props.
 export const COMPONENT_PROPS_SCHEMAS = {
   TranslateButton: z.object({

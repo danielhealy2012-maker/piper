@@ -3,6 +3,7 @@ import {
   SLOT_NAMES,
   SLOTS,
   THEME_TOKENS,
+  isDeprecatedComponent,
   propsSchemaFor,
   type ComponentName,
 } from "./registry";
@@ -221,7 +222,13 @@ const COMPONENT_TRIGGERS: ComponentTrigger[] = [
   { component: "ReadReceipt", re: /\bread receipts?\b/, computeOn: () => "outgoing" },
   { component: "VoiceNote", re: /\bvoice (note|message|memo)\b|\bmic\b/ },
   { component: "GifPicker", re: /\bgifs?\b/ },
-  { component: "Poll", re: /\bpolls?\b/ },
+  // NO Poll trigger, deliberately. The bundled `Poll` is a static demo: it
+  // renders a question and options but tallies nothing and is visible only to
+  // its owner. While this trigger existed, the bare phrasing "add a poll" hit
+  // the free keyword path and silently got that static one, never reaching
+  // the model that can build a real shared poll both people vote in. Letting
+  // it cost a model call is the right trade — the model can still choose the
+  // static component when that's genuinely all that's wanted.
   { component: "ScheduledSend", re: /\bschedule[ds]?\b|\bscheduling\b|\bsend later\b/ },
   {
     component: "AIReplyDraft",
@@ -551,7 +558,10 @@ const VOCAB = new Set([
   "emoji", "thumbs", "heart", "suggest", "suggestions", "autocomplete", "tone", "rewrite",
   "formal", "casual", "search", "find", "mute", "silence", "disturb", "read", "receipt",
   "receipts", "voice", "note", "message", "messages", "memo", "mic", "gif", "gifs", "picker",
-  "poll", "polls",
+  // "poll"/"polls" deliberately absent, matching the removed Poll trigger
+  // above — VOCAB must only list words draft() actually consumes, and leaving
+  // them here would let "add a poll" pass the residual gate as fully
+  // understood when the stub no longer does anything with it.
   "schedule", "scheduled", "scheduling", "later", "ai", "reply", "drafter", "draft", "smart",
   "compose", "write", "video", "call", "facetime",
   "accent", "color", "tail", "tails", "tint", "mood", "sentiment", "title", "rename", "reset",
@@ -615,8 +625,14 @@ export function buildSystemPrompt(genres?: Set<Genre> | null): string {
     return `- ${name} (${desc.kind}): ${desc.label}. ${constraint}`;
   });
 
+  // Deprecated components are filtered out of what the model is OFFERED,
+  // while staying valid for specs that already contain them — see
+  // DEPRECATED_COMPONENTS in registry.ts.
   const slotLines = SLOT_NAMES.map(
-    (slot) => `- ${slot} — ${SLOTS[slot].label}. Allowed components: ${SLOTS[slot].allow.join(", ")}.`,
+    (slot) =>
+      `- ${slot} — ${SLOTS[slot].label}. Allowed components: ${SLOTS[slot].allow
+        .filter((c) => !isDeprecatedComponent(c))
+        .join(", ")}.`,
   );
 
   const sectionsFor = (at: "hatches" | "tail") =>
@@ -676,7 +692,6 @@ export function buildSystemPrompt(genres?: Set<Genre> | null): string {
     "Some components take props — set these when the instruction specifies them, otherwise omit props and the defaults apply:",
     '- TranslateButton: {"target": <language name, e.g. "Chinese", "Japanese", "French"> } — free text, any language. If the instruction names a language ("add a translate button for Chinese"), you MUST set target to that language, not leave it defaulted.',
     '- ReactionBar: {"emojis": [array of up to 6 emoji]}',
-    '- Poll: {"question": string, "options": [array of up to 4 strings]}',
     '- ToneShifter: {"tones": [array from "formal","casual","warm","concise"]}',
     '- ThemeBadge: {"text": string, max 24 chars}',
     "",

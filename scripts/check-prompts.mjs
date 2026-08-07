@@ -34,7 +34,7 @@ async function loadModules() {
         export { buildSystemPrompt } from "./src/engine/generate";
         export { buildRouterPrompt } from "./src/engine/actions";
         export { formatHistory } from "./src/engine/history";
-        export { DEFAULT_SPEC } from "./src/engine/spec";
+        export { DEFAULT_SPEC, validateSpec } from "./src/engine/spec";
       `,
       resolveDir: ROOT,
       loader: "ts",
@@ -80,6 +80,7 @@ const {
   genresPresentInSpec,
   formatHistory,
   DEFAULT_SPEC,
+  validateSpec,
 } = mod;
 
 const g = (...names) => new Set(names);
@@ -250,6 +251,34 @@ group("shared components get the scope + sync contract");
   ok(
     "an existing shared component keeps its contract on the next instruction",
     genresPresentInSpec(withSharedGame).has("sharedState"),
+  );
+}
+
+// -- 7c. Deprecated components aren't offered --------------------------------
+//
+// `Poll` is a dead mockup that tallies nothing and only its owner can see.
+// While the model was offered a component literally named "Poll", it kept
+// picking it for "add a poll" — silently substituting something
+// non-functional for the thing asked for. It has to stay VALID though, or a
+// saved spec containing one would fail validation and reset that user's
+// whole theme.
+group("deprecated components are hidden but still valid");
+{
+  const full = buildSystemPrompt(null);
+  ok("the dead Poll component is not offered to the model", !full.includes("Poll"));
+
+  const legacy = {
+    ...DEFAULT_SPEC,
+    slots: {
+      ...DEFAULT_SPEC.slots,
+      composerActions: [{ component: "Poll", on: "all", props: { question: "Dinner?", options: ["a", "b"] } }],
+    },
+  };
+  const result = validateSpec(legacy);
+  ok(
+    "a saved spec containing it still validates",
+    result.ok,
+    result.ok ? "" : `would reset the user's theme: ${result.error}`,
   );
 }
 

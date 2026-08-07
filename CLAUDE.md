@@ -171,6 +171,15 @@ across the You/Sam viewer toggle.
   ReactionBar, ReadReceipt), `composerActions` (ToneShifter, ClearButton,
   VoiceNote, GifPicker, Poll, ScheduledSend, AIReplyDraft), `headerActions` (SearchBox,
   MuteToggle, ThemeBadge, VideoCallButton).
+- **Deprecated components** (`DEPRECATED_COMPONENTS` in `registry.ts`) still VALIDATE but are
+  filtered out of what the model is offered in `buildSystemPrompt`. `Poll` is the first:
+  it's a dead mockup that tallies nothing and is personal-scoped, so the other person never
+  sees it. While the model was offered a component literally named "Poll" it kept choosing
+  it for "add a poll" — silently substituting something non-functional for what was asked
+  for — and explicit prompt warnings weren't enough. It stays valid rather than deleted
+  because a saved spec containing one must keep validating; otherwise `loadTheme` rejects
+  it and silently resets that user's whole theme to defaults. Real polls are now built as
+  shared `customComponents` with the votes in `sharedState`.
 - A handful of components carry real prop schemas (TranslateButton, ReactionBar, Poll,
   ToneShifter, ThemeBadge) — everything else takes no props. This is deliberate: the point is
   proving prop validation works on genuine prop-bearing components, not model-friendly divs.
