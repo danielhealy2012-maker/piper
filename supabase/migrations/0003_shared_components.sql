@@ -26,7 +26,7 @@ create table if not exists public.shared_components (
   component_id text not null check (char_length(component_id) between 1 and 40),
   label text not null check (char_length(label) between 1 and 60),
   slot text not null check (slot in ('composerActions', 'headerActions', 'standalone')),
-  code text not null check (char_length(code) <= 3000),
+  code text not null check (char_length(code) <= 6000),
   created_by uuid not null references auth.users(id) on delete cascade,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
