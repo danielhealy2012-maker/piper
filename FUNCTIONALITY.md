@@ -1,7 +1,10 @@
 # Piper — Functionality Matrix
 
-**Last updated:** 2026-07-29  
-**Current Phase:** Phase 1 (Multiplayer foundation) + real image generation (Phase 2 item, done early)
+**Last updated:** 2026-08-09  
+**Current Phase:** Phase 2 build-out (see `NEXT_PHASE_PLAN.md`) — shared-state primitive (1a) and
+conversational memory (1b) shipped, most of the approved feature list built on top of them.
+Remaining: reminders/scheduled sends (#4) and notification sounds (#14) need real new
+infrastructure and are scoped but not built — see the handoff notes for what they need from Dan.
 
 ---
 
