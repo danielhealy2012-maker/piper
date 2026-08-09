@@ -100,6 +100,7 @@
 | Shared whiteboard / drawing | ✅ | Generates using the atomic `appendSharedState` so simultaneous strokes from both people survive. **Needs migration 0004** |
 | Concurrent-safe shared writes | ✅ | `appendSharedState(listKey, item)` appends inside Postgres in one statement. `setSharedState` still replaces (correct for turn-based), so the model is told: if both people could act at the same instant, append |
 | Conversational memory | ✅ | The last 8 instruction/outcome pairs ride along with `/api/route` and `/api/generate`, so "make it more like that", "a bit less", "undo that and try again" resolve. Session-only — resets on reload, like the change log always has |
+| Streaks & milestones ("celebrate every 100th message") | ✅ | Emergent from `interactiveComponent` — the model reads the real `messages` array and filters/counts accurately. Required two prompt fixes: nudging the classifier toward `interactiveComponent` (not `reactiveEffect`, which has no memory of prior counts) for anything gated on a true running count, and documenting the actual message shape (`authorId`, `isMine`, `time`, not guessed field names like `senderId`) so generated code reads real fields instead of silently-undefined ones |
 
 ### Infrastructure & Security
 

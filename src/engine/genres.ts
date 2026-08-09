@@ -44,14 +44,14 @@ export const GENRES = {
   },
   reactiveEffect: {
     classifierHint:
-      'something should happen ONCE, in response to a specific event — sending a message, receiving one, or reacting. "confetti when I get a message", "flash the screen on a reaction".',
+      'something should happen ONCE, in response to a specific event — sending a message, receiving one, or reacting. "confetti when I get a message", "flash the screen on a reaction". Do NOT use this for anything that needs to know the TRUE running message count or conversation history (e.g. "celebrate every 100th message", "mark our one-year anniversary of chatting") — a one-shot effect has no memory between firings and no access to the real message list, so it can only fake a counter. Use `interactiveComponent` instead for those, since it receives the real `messages` array.',
     routerHint: 'one-shot effects on an event — "pop confetti when I receive a message", "flash on a reaction"',
   },
   interactiveComponent: {
     classifierHint:
-      'the request needs a real WIDGET with its own state and behavior, not just styling or a one-shot effect — a timer, a counter, a calculator, a mini-game (tic-tac-toe, trivia), a to-do list, a scoreboard, any ongoing UI the user can interact with. Also use this flag for removing or modifying a widget that already exists.',
+      'the request needs a real WIDGET with its own state and behavior, not just styling or a one-shot effect — a timer, a counter, a calculator, a mini-game (tic-tac-toe, trivia), a to-do list, a scoreboard, any ongoing UI the user can interact with. Also use this flag for removing or modifying a widget that already exists. This is also the right flag for anything gated on the TRUE message count or history — "celebrate every 100th message", "streak tracker", "one year since we started" — because only a component receives the real `messages` array/timestamps; a one-shot effect (reactiveEffect) cannot count accurately across events.',
     routerHint:
-      'real interactive widgets with their own state — timers, counters, calculators, mini-games (including tic-tac-toe), to-do lists, scoreboards, and removing/modifying ones already added',
+      'real interactive widgets with their own state — timers, counters, calculators, mini-games (including tic-tac-toe), to-do lists, scoreboards, streak/milestone trackers based on real message counts, and removing/modifying ones already added',
   },
   sharedState: {
     classifierHint:
@@ -162,7 +162,7 @@ export const SPECIALIST_SECTIONS: SpecialistSection[] = [
     build: () => [
       '`customComponents` — a whole new INTERACTIVE widget, for requests the other hatches can\'t reach because they need real state/behavior, not just style or a one-shot effect: a countdown timer, a small calculator, a mini game, anything with its own ongoing UI. An array of up to 5 objects: {"id": <short stable slug, e.g. "countdown-timer">, "label": <short human name shown if it errors, e.g. "Countdown Timer">, "slot": "composerActions"|"headerActions"|"standalone", "code": <string, see contract below>}.',
       "   - CODE CONTRACT (strict — anything else fails to compile): the string must define EXACTLY one top-level `function Component(props) { ... }` using JSX to return its UI, and nothing else — no import/export statements, no code outside that one function. React and the hooks useState/useEffect/useRef are already in scope — call them directly (`useState(0)`, not `React.useState(0)`).",
-      '   - `props` gives you: `messages` (the current message list, read-only), `viewerId` (string), `sendMessage(text)` (a function — call it to send a real message into the chat, e.g. for a timer that announces when it hits zero), plus `sharedState`/`setSharedState` (see SCOPE below).',
+      '   - `props` gives you: `messages` (the current message list, read-only — each item is `{id, authorId, text, time, isMine, reactions?, editedAt?}`; `time` is an ISO timestamp string, `authorId` (NOT `senderId`) identifies the sender, `isMine` is true for the viewer\'s own messages — use these exact field names, do not guess plausible-sounding ones), `viewerId` (string, matches a message\'s `authorId` when it is the viewer\'s own), `sendMessage(text)` (a function — call it to send a real message into the chat, e.g. for a timer that announces when it hits zero), plus `sharedState`/`setSharedState` (see SCOPE below).',
       '   - SCOPE — every component needs a `"scope"` field, `"personal"` or `"shared"`:',
       '     * `"personal"` (the default) renders only for the person who asked for it, and its state is private to them. Correct for anything one-sided: a calculator, a countdown timer, a unit converter, a personal note pad.',
       '     * `"shared"` renders for BOTH people in the conversation and is kept in sync live. Correct — and REQUIRED — for anything the two people do together: a two-player game, a shared to-do list, a live poll with real votes, a collaborative drawing surface, a shared counter or scoreboard. A game marked "personal" is broken by construction: the other person cannot see the board at all, so there is nobody to play against.',
