@@ -229,6 +229,14 @@ auto-scroll-to-bottom effect — without it a new message is appended but invisi
 Message content is NOT persisted in demo mode (resets on reload); in multiplayer it lives
 in Postgres. Theme specs persist per user in both modes.
 
+**Typing indicators** (Phase 2 #16, `lib/db.ts`'s `sendTyping`/`subscribeTyping`) ride a
+separate Realtime BROADCAST channel per conversation — not `postgres_changes` like
+messages/shared components above, and deliberately no table: "is someone typing" is
+ephemeral and would be pure write churn as a DB row rewritten on every keystroke. No
+"stopped typing" event exists, so `Workspace.tsx` clears the indicator with a 3s quiet
+timer instead of an explicit signal. Entirely outside the router/model — no action, no
+instruction, just a debounced-on-send-side (2s throttle) broadcast on composer input.
+
 ## Two scopes for custom components (`supabase/migrations/0003_shared_components.sql`)
 
 Every `customComponent` carries `scope: "personal" | "shared"`.

@@ -21,6 +21,8 @@ import {
   fetchSharedComponents,
   saveNicknames,
   saveSharedComponent,
+  sendTyping as dbSendTyping,
+  subscribeTyping as dbSubscribeTyping,
   writeSharedComponentState,
 } from "./db";
 import { requireSupabase } from "./supabase";
@@ -56,6 +58,11 @@ export interface ChatBackend {
    *  name, never the other way around. Keyed by that participant's user id. */
   getNicknames(): Promise<Record<string, string>>;
   saveNicknames(nicknames: Record<string, string>): Promise<void>;
+  /** Fire-and-forget "I'm typing" signal — caller debounces, this doesn't. */
+  sendTyping(): void;
+  /** Fires with the OTHER participant's id whenever they signal typing.
+   *  Returns an unsubscribe function, matching `subscribe`. */
+  subscribeTyping(onTyping: (fromUserId: string) => void): () => void;
   send(text: string): Promise<void>;
   edit(id: string, text: string): Promise<void>;
   remove(id: string): Promise<void>;
@@ -139,6 +146,11 @@ const localState: LocalState = {
 const localListeners = new Set<() => void>();
 const notifyLocal = () => localListeners.forEach((fn) => fn());
 
+// Separate from localListeners/notifyLocal above on purpose: typing is
+// ephemeral and must NOT trigger the full messages/shared-state refetch
+// every other change does.
+const typingListeners = new Set<(fromUserId: string) => void>();
+
 export function createLocalBackend(viewerId: string): ChatBackend {
   return {
     kind: "local",
@@ -164,6 +176,16 @@ export function createLocalBackend(viewerId: string): ChatBackend {
     },
     async saveNicknames(nicknames) {
       localState.nicknames[viewerId] = nicknames;
+    },
+    sendTyping() {
+      typingListeners.forEach((fn) => fn(viewerId));
+    },
+    subscribeTyping(onTyping) {
+      const handler = (fromUserId: string) => {
+        if (fromUserId !== viewerId) onTyping(fromUserId);
+      };
+      typingListeners.add(handler);
+      return () => typingListeners.delete(handler);
     },
     async send(text) {
       localState.messages = [
@@ -341,6 +363,11 @@ export function createSupabaseBackend(conversationId: string, userId: string): C
     saveTheme: (spec) => saveTheme(conversationId, userId, spec),
     getNicknames: () => fetchNicknames(conversationId, userId),
     saveNicknames: (nicknames) => saveNicknames(conversationId, userId, nicknames),
+    sendTyping: () => dbSendTyping(conversationId, userId),
+    subscribeTyping(onTyping) {
+      const channel = dbSubscribeTyping(conversationId, userId, onTyping);
+      return () => void requireSupabase().removeChannel(channel);
+    },
     send: (text) => sendMessage(conversationId, userId, text),
     edit: (id, text) => editMessage(id, text),
     remove: (id) => deleteMessage(id),

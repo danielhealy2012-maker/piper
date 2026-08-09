@@ -22,6 +22,11 @@ export interface ChatProps {
   // PERSONAL: how the viewer sees the OTHER participant's name, keyed by
   // their real user id. Never affects what the other person sees.
   nicknames?: Record<string, string>;
+  // Phase 2 #16. The other participant's id while they're typing, else null
+  // — Workspace owns the subscription/timer, this is read-only display here.
+  typingUserId?: string | null;
+  // Fired on every composer keystroke; Workspace throttles the actual send.
+  onTypingChange?: () => void;
   // Translation state lives in App (so both the button and the action router can
   // drive it) and flows down here read-only.
   translations: Record<string, TranslationEntry>;
@@ -43,6 +48,8 @@ export function Chat({
   viewerId,
   users,
   nicknames,
+  typingUserId,
+  onTypingChange,
   translations,
   pinnedMessageIds,
   starredMessageIds,
@@ -163,7 +170,9 @@ export function Chat({
         )}
         <div className="flex-1 leading-tight">
           <div className="font-semibold">{title}</div>
-          <div className={`text-[11px] ${metaTextClass}`}>active now</div>
+          <div className={`text-[11px] ${metaTextClass}`}>
+            {other && typingUserId === other.id ? "typing…" : "active now"}
+          </div>
         </div>
         <div className="flex items-center gap-1.5">
           {spec.slots.headerActions.map((action, i) => renderAction(action, i, { draft, setDraft }))}
@@ -301,7 +310,10 @@ export function Chat({
         >
           <input
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(e) => {
+              setDraft(e.target.value);
+              if (e.target.value) onTypingChange?.();
+            }}
             placeholder="iMessage"
             className="flex-1 rounded-full border border-black/15 bg-black/[0.03] px-3 py-1.5 text-sm outline-none"
           />

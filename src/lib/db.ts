@@ -529,6 +529,48 @@ export function subscribeConversation(conversationId: string, onChange: () => vo
 }
 
 // ---------------------------------------------------------------------------
+// Typing indicators (Phase 2 #16) — Realtime BROADCAST, not postgres_changes.
+// ---------------------------------------------------------------------------
+// Deliberately no table, no migration: "is someone typing right now" is
+// ephemeral, ceases to matter the instant it's stale, and would be pure
+// write churn as a DB row (one row rewritten on every keystroke, broadcast
+// to Realtime either way). Broadcast is peer-to-peer over the same
+// websocket messages/shared-components already use — nothing new to
+// provision. Own channel so a burst of typing events can never compete with
+// or delay the messages/shared-component channels above.
+
+export function subscribeTyping(
+  conversationId: string,
+  viewerId: string,
+  onTyping: (fromUserId: string) => void,
+): RealtimeChannel {
+  const sb = requireSupabase();
+  return sb
+    .channel(`conversation-typing:${conversationId}`)
+    .on("broadcast", { event: "typing" }, ({ payload }) => {
+      const from = (payload as { userId?: string } | undefined)?.userId;
+      // Ignore our own broadcast — Supabase Realtime echoes it back to the
+      // sender by default, and a "you are typing" indicator would be a bug.
+      if (from && from !== viewerId) onTyping(from);
+    })
+    .subscribe();
+}
+
+/** Fire-and-forget: caller (Workspace) is responsible for debouncing so this
+ *  isn't sent on every keystroke. Uses supabase-js's REST-based broadcast
+ *  send, which works without first subscribing/joining a socket — a fresh
+ *  short-lived channel object per call is the documented pattern for a
+ *  one-off send, not a leak; there's no long-lived connection to clean up. */
+export function sendTyping(conversationId: string, userId: string) {
+  const sb = requireSupabase();
+  void sb.channel(`conversation-typing:${conversationId}`).send({
+    type: "broadcast",
+    event: "typing",
+    payload: { userId },
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Conversation operations
 // ---------------------------------------------------------------------------
 

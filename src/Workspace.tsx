@@ -74,6 +74,11 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
   // NEXT instruction the user types is treated as the answer and merged with
   // this original instruction rather than run standalone.
   const [pendingClarification, setPendingClarification] = useState<string | null>(null);
+  // Phase 2 #16. The other participant's id while they're actively typing,
+  // else null. No explicit "stopped typing" signal exists (broadcast-only,
+  // no state to clear) — a timer clears it after a quiet period instead, see
+  // the typing-subscribe effect below.
+  const [typingUserId, setTypingUserId] = useState<string | null>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
 
   // Fires on every realtime event, so it must pull everything SHARED: the
@@ -123,6 +128,25 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
     };
   }, [backend, refresh]);
 
+  // Typing indicator: separate subscription from the one above, since a
+  // typing event must never trigger a full messages/shared-state refetch.
+  // No "stopped typing" event exists, so a 3s quiet timer clears it instead —
+  // long enough to survive normal inter-keystroke gaps, short enough that a
+  // closed tab doesn't leave a stale "typing…" showing indefinitely.
+  useEffect(() => {
+    let clearTimer: ReturnType<typeof setTimeout> | undefined;
+    const unsubscribe = backend.subscribeTyping((fromUserId) => {
+      setTypingUserId(fromUserId);
+      clearTimeout(clearTimer);
+      clearTimer = setTimeout(() => setTypingUserId(null), 3000);
+    });
+    return () => {
+      clearTimeout(clearTimer);
+      unsubscribe();
+      setTypingUserId(null);
+    };
+  }, [backend]);
+
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [log]);
@@ -132,6 +156,18 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
     const t = setTimeout(() => setNotice(null), 9000);
     return () => clearTimeout(t);
   }, [notice]);
+
+  // Throttled, not debounced: a debounce would wait for the user to PAUSE
+  // typing before sending anything, which is backwards for a live "is
+  // typing" signal — the other person should see it start immediately, this
+  // just caps how often re-typing re-sends it.
+  const lastTypingSentRef = useRef(0);
+  const handleTypingChange = useCallback(() => {
+    const now = Date.now();
+    if (now - lastTypingSentRef.current < 2000) return;
+    lastTypingSentRef.current = now;
+    backend.sendTyping();
+  }, [backend]);
 
   const pushUndo = (op: UndoOp) => setUndoStack((prev) => [...prev, op]);
 
@@ -995,6 +1031,8 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
             viewerId={backend.viewerId}
             users={users}
             nicknames={nicknames}
+            typingUserId={typingUserId}
+            onTypingChange={handleTypingChange}
             translations={translations}
             pinnedMessageIds={pinnedMessageIds}
             starredMessageIds={starredMessageIds}
