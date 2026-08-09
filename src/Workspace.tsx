@@ -53,6 +53,9 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
   // The PERSONAL spec — what gets written to member_theme. Shared components
   // are deliberately not in here; see composedSpec below.
   const [spec, setSpec] = useState<Spec>(DEFAULT_SPEC);
+  // PERSONAL: how the viewer sees the other participant's name. Keyed by
+  // their real user id, never the viewer's own — see backend.getNicknames.
+  const [nicknames, setNicknames] = useState<Record<string, string>>({});
   const [sharedComponents, setSharedComponents] = useState<SharedComponentRecord[]>([]);
   const [sharedState, setSharedState] = useState<Record<string, unknown>>({});
   const [translations, setTranslations] = useState<Record<string, TranslationEntry>>({});
@@ -94,12 +97,13 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
   useEffect(() => {
     let alive = true;
     void (async () => {
-      const [nextUsers, nextMessages, nextSpec, nextShared, nextSharedState] = await Promise.all([
+      const [nextUsers, nextMessages, nextSpec, nextShared, nextSharedState, nextNicknames] = await Promise.all([
         backend.getUsers(),
         backend.fetchMessages(),
         backend.loadTheme(),
         backend.fetchSharedComponents(),
         backend.fetchSharedState(),
+        backend.getNicknames(),
       ]);
       if (!alive) return;
       setUsers(nextUsers);
@@ -107,6 +111,7 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
       setSpec(nextSpec);
       setSharedComponents(nextShared);
       setSharedState(nextSharedState);
+      setNicknames(nextNicknames);
       setTranslations({});
       setLog([]);
       setUndoStack([]);
@@ -668,6 +673,47 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
           continue;
         }
 
+        if (action.kind === "setNickname") {
+          if (!users.some((u) => u.id === action.authorId)) {
+            notes.push("couldn't identify which person you meant");
+            continue;
+          }
+          const previous = nicknames;
+          const next = { ...nicknames, [action.authorId]: action.nickname };
+          setNicknames(next);
+          await backend.saveNicknames(next);
+          inverses.push({
+            label: "setNickname",
+            run: async () => {
+              setNicknames(previous);
+              await backend.saveNicknames(previous);
+            },
+          });
+          applied.push(`set nickname to "${action.nickname}"`);
+          continue;
+        }
+
+        if (action.kind === "clearNickname") {
+          const previous = nicknames;
+          if (!(action.authorId in previous)) {
+            notes.push("that person doesn't have a nickname set");
+            continue;
+          }
+          const next = { ...previous };
+          delete next[action.authorId];
+          setNicknames(next);
+          await backend.saveNicknames(next);
+          inverses.push({
+            label: "clearNickname",
+            run: async () => {
+              setNicknames(previous);
+              await backend.saveNicknames(previous);
+            },
+          });
+          applied.push("cleared nickname");
+          continue;
+        }
+
         if (action.kind === "filterByAuthor") {
           // Not implemented yet — no UI state consumes this. Report honestly
           // rather than claiming success for something that visibly does
@@ -932,6 +978,7 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
             messages={messages}
             viewerId={backend.viewerId}
             users={users}
+            nicknames={nicknames}
             translations={translations}
             pinnedMessageIds={pinnedMessageIds}
             starredMessageIds={starredMessageIds}

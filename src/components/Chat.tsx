@@ -19,6 +19,9 @@ export interface ChatProps {
   messages: ChatMessage[];
   viewerId: string;
   users: DisplayUser[];
+  // PERSONAL: how the viewer sees the OTHER participant's name, keyed by
+  // their real user id. Never affects what the other person sees.
+  nicknames?: Record<string, string>;
   // Translation state lives in App (so both the button and the action router can
   // drive it) and flows down here read-only.
   translations: Record<string, TranslationEntry>;
@@ -39,6 +42,7 @@ export function Chat({
   messages,
   viewerId,
   users,
+  nicknames,
   translations,
   pinnedMessageIds,
   starredMessageIds,
@@ -55,6 +59,7 @@ export function Chat({
   // conversation legitimately has only you in it), so this must not assume a
   // second participant exists.
   const other = users.find((u) => u.id !== viewerId) ?? users[0] ?? null;
+  const displayNameFor = (user: DisplayUser) => nicknames?.[user.id] ?? user.name;
   const dark = isDarkWallpaper(theme);
   const headerTextClass = dark ? "text-white" : "text-black";
   const metaTextClass = dark ? "text-white/60" : "text-black/40";
@@ -64,7 +69,7 @@ export function Chat({
   // Until the user renames the chat themselves, show whoever they're actually
   // talking to rather than the seed placeholder.
   const title =
-    theme.chatTitle === DEFAULT_SPEC.theme.chatTitle && other?.name ? other.name : theme.chatTitle;
+    theme.chatTitle === DEFAULT_SPEC.theme.chatTitle && other?.name ? displayNameFor(other) : theme.chatTitle;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -184,7 +189,7 @@ export function Chat({
                 const author = users.find((u) => u.id === message.authorId);
                 return (
                   <div key={message.id} className="text-xs text-blue-900 mb-1 last:mb-0">
-                    <strong>{author?.name}:</strong> {message.text.slice(0, 50)}
+                    <strong>{author ? displayNameFor(author) : undefined}:</strong> {message.text.slice(0, 50)}
                     {message.text.length > 50 ? "…" : ""}
                   </div>
                 );

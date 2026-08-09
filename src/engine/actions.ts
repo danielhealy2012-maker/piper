@@ -80,6 +80,16 @@ export const MessageActionSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("complimentMe"),
   }),
+  // Nicknames (personal — how the viewer sees the other participant's name)
+  z.object({
+    kind: z.literal("setNickname"),
+    authorId: z.string(),
+    nickname: z.string().min(1).max(40),
+  }),
+  z.object({
+    kind: z.literal("clearNickname"),
+    authorId: z.string(),
+  }),
   // Filters
   z.object({
     kind: z.literal("filterByAuthor"),
@@ -158,6 +168,7 @@ export function buildRouterPrompt(): string {
     "   Reactions: reactToMessage, deleteReaction, deleteAllReactions",
     "   Annotations: pinMessage, unpinMessage, starMessage, unstarMessage",
     "   Queries: summarizeConversation, generateResponse, suggestReplies, roastMe, complimentMe",
+    "   Nicknames (PERSONAL — only changes how YOU see the other person's name, never their real profile, never visible to them): setNickname, clearNickname",
     "",
     "MESSAGE ACTION DETAILS:",
     '  - {"kind":"translateMessage","messageId":<id>,"targetLanguage":"French"} — any language.',
@@ -176,6 +187,8 @@ export function buildRouterPrompt(): string {
     '  - {"kind":"suggestReplies"} — 3 suggested replies.',
     '  - {"kind":"roastMe"} — a short, playful, lighthearted roast of the current user based on the conversation. Examples: "roast me", "roast me based on this chat".',
     '  - {"kind":"complimentMe"} — a short, warm compliment for the current user based on the conversation. Examples: "compliment me", "say something nice about me", "hype me up".',
+    '  - {"kind":"setNickname","authorId":<id>,"nickname":<string>} — from now on, YOU (not them) see that participant\'s name as the nickname everywhere their name is shown. Examples: "call Sam \'Sammy\'", "nickname Sam as Boss". Use the exact authorId from the participants list — never your own.',
+    '  - {"kind":"clearNickname","authorId":<id>} — go back to their real name. Examples: "stop calling Sam Sammy", "remove Sam\'s nickname", "use Sam\'s real name again".',
     "",
     "Resolve message references yourself using the list below. Match by quote, position (\\\"last message\\\", \\\"first message\\\", \\\"second message\\\"), or author. Use the exact id from the list. NEVER invent an id.",
     "",

@@ -252,6 +252,52 @@ export async function saveTheme(conversationId: string, userId: string, spec: Sp
 }
 
 // ---------------------------------------------------------------------------
+// Nicknames (PERSONAL state — supabase/migrations/0005_member_nicknames.sql)
+// ---------------------------------------------------------------------------
+// One row per viewer: a JSONB map of target user id -> nickname. Same
+// deploy-ahead-of-schema window as shared_components (see isMissingTable
+// above) — degrades to "no nicknames" rather than breaking the load.
+
+export async function fetchNicknames(
+  conversationId: string,
+  userId: string,
+): Promise<Record<string, string>> {
+  const sb = requireSupabase();
+  const { data, error } = await sb
+    .from("member_nicknames")
+    .select("nicknames")
+    .eq("conversation_id", conversationId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) {
+    if (isMissingTable(error)) {
+      console.warn(
+        "[piper] member_nicknames table missing — run supabase/migrations/0005_member_nicknames.sql. Nicknames are unavailable until then; the rest of the app is unaffected.",
+      );
+      return {};
+    }
+    throw error;
+  }
+  const raw = data?.nicknames;
+  return raw && typeof raw === "object" ? (raw as Record<string, string>) : {};
+}
+
+export async function saveNicknames(
+  conversationId: string,
+  userId: string,
+  nicknames: Record<string, string>,
+) {
+  const sb = requireSupabase();
+  const { error } = await sb.from("member_nicknames").upsert({
+    conversation_id: conversationId,
+    user_id: userId,
+    nicknames: nicknames as never,
+    updated_at: new Date().toISOString(),
+  });
+  if (error && !isMissingTable(error)) throw error;
+}
+
+// ---------------------------------------------------------------------------
 // SHARED custom components (supabase/migrations/0003_shared_components.sql)
 // ---------------------------------------------------------------------------
 // Unlike member_theme above, these are conversation-scoped: RLS lets any

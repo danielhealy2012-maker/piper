@@ -107,14 +107,20 @@ The intelligence is in *routing and parameter-filling*, not code generation — 
    - `messageActions`: `translateMessage`, `editMessage`, `deleteMessage`,
      `deleteAllMessagesBy`, `reactToMessage`, `deleteReaction`, `deleteAllReactions`,
      `pinMessage`/`unpinMessage`, `starMessage`/`unstarMessage`, `summarizeConversation`,
-     `generateResponse`, `suggestReplies`, `roastMe`/`complimentMe`. The model resolves
-     references ("Sam's last message") to concrete ids itself. Reaction deletes are real
-     deletes, never a toggle that could add one back — RLS only allows deleting your own
-     reaction row, so `deleteReaction` reports "no such reaction" rather than silently
-     reacting when the target isn't the viewer's own. `roastMe`/`complimentMe`
-     (`api/roast-or-compliment.js`, one endpoint, a `tone` param) always target the
-     requesting viewer specifically — never the other participant, since that's a
-     materially different and riskier feature than the one asked for.
+     `generateResponse`, `suggestReplies`, `roastMe`/`complimentMe`,
+     `setNickname`/`clearNickname`. The model resolves references ("Sam's last message")
+     to concrete ids itself. Reaction deletes are real deletes, never a toggle that could
+     add one back — RLS only allows deleting your own reaction row, so `deleteReaction`
+     reports "no such reaction" rather than silently reacting when the target isn't the
+     viewer's own. `roastMe`/`complimentMe` (`api/roast-or-compliment.js`, one endpoint, a
+     `tone` param) always target the requesting viewer specifically — never the other
+     participant, since that's a materially different and riskier feature than the one
+     asked for. `setNickname`/`clearNickname` are PERSONAL (own `member_nicknames` table,
+     migration 0005, owner-only RLS matching `member_theme`) — deliberately kept out of the
+     model-generated Spec even though Spec is also personal, because Spec is echoed back
+     verbatim on every `/api/generate` call and a field the model wasn't told about is a
+     silent-drop risk; nicknames are set directly by the router action instead, no model
+     round-trip needed to store them.
    - `themeInstruction`: the appearance part of the request (including animations/one-shot
      effects — these are appearance, not a separate capability), delegated **verbatim to the
      existing `generateSpec`**. `themeMutation` (`"reset"|"randomize"`) is for explicit theme

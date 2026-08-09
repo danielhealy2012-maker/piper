@@ -16,8 +16,10 @@ import {
   updateConversationTitle,
   appendSharedComponentState,
   deleteSharedComponent,
+  fetchNicknames,
   fetchSharedComponentState,
   fetchSharedComponents,
+  saveNicknames,
   saveSharedComponent,
   writeSharedComponentState,
 } from "./db";
@@ -47,6 +49,10 @@ export interface ChatBackend {
   subscribe(onChange: () => void): () => void;
   loadTheme(): Promise<Spec>;
   saveTheme(spec: Spec): Promise<void>;
+  /** PERSONAL, like the theme: how the viewer sees the OTHER participant's
+   *  name, never the other way around. Keyed by that participant's user id. */
+  getNicknames(): Promise<Record<string, string>>;
+  saveNicknames(nicknames: Record<string, string>): Promise<void>;
   send(text: string): Promise<void>;
   edit(id: string, text: string): Promise<void>;
   remove(id: string): Promise<void>;
@@ -103,6 +109,8 @@ interface LocalState {
   deleted: ChatMessage[];
   /** Keyed by viewer: personal, like member_theme's RLS makes it in production. */
   themes: Record<string, Spec>;
+  /** Keyed by viewer, each value a map of target user id -> nickname. */
+  nicknames: Record<string, Record<string, string>>;
   /** NOT keyed by viewer — that's the whole point. Both demo viewers read the
    *  same rows, so flipping "Viewing as" is a real test of the shared path. */
   sharedComponents: SharedComponentRecord[];
@@ -120,6 +128,7 @@ const localState: LocalState = {
   })),
   deleted: [],
   themes: {},
+  nicknames: {},
   sharedComponents: [],
   sharedState: {},
 };
@@ -146,6 +155,12 @@ export function createLocalBackend(viewerId: string): ChatBackend {
     },
     async saveTheme(spec) {
       localState.themes[viewerId] = spec;
+    },
+    async getNicknames() {
+      return { ...(localState.nicknames[viewerId] ?? {}) };
+    },
+    async saveNicknames(nicknames) {
+      localState.nicknames[viewerId] = nicknames;
     },
     async send(text) {
       localState.messages = [
@@ -320,6 +335,8 @@ export function createSupabaseBackend(conversationId: string, userId: string): C
     },
     loadTheme: () => loadTheme(conversationId, userId),
     saveTheme: (spec) => saveTheme(conversationId, userId, spec),
+    getNicknames: () => fetchNicknames(conversationId, userId),
+    saveNicknames: (nicknames) => saveNicknames(conversationId, userId, nicknames),
     send: (text) => sendMessage(conversationId, userId, text),
     edit: (id, text) => editMessage(id, text),
     remove: (id) => deleteMessage(id),
