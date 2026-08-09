@@ -64,6 +64,7 @@
 | Summarize conversation | ✅ | `/api/summarize`, last 20 messages, 1-2 sentence TLDR |
 | Generate AI reply | ✅ | `/api/generate-response`, drafts natural response to last msg |
 | Suggest 3 replies | ✅ | `/api/suggest-replies`, different tones/approaches |
+| Roast me / compliment me | ✅ | `/api/roast-or-compliment` (Phase 2 #10), one endpoint with a `tone` param. Always targets the requesting viewer specifically (never the other participant), grounded in real conversation content when there's anything usable |
 | All queries are metered | ✅ | Count against daily per-user API cap |
 
 ### Conversations

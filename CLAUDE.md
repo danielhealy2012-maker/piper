@@ -40,6 +40,12 @@ delete → clear `deleted_at`, react → toggle again, theme → re-save previou
 environment-specific URLs in the client. The deployed ones additionally verify the
 Supabase JWT and meter per-user daily usage (`api/_lib.js`) — they are public URLs and
 must not become a free proxy to the Anthropic key. `src/lib/api.ts` attaches the token.
+This pairing has drifted before: `/api/summarize`, `/api/generate-response` and
+`/api/suggest-replies` shipped in `api/*.js` without ever being added to
+`server/proxy.mjs`, so those three query features silently 404'd in every local/demo
+session while working fine in production. Fixed, but there's no automated check tying
+the two together — when adding a new `/api/*` endpoint, add it to both files in the same
+change, the way `/api/roast-or-compliment` did.
 
 ## Two engines, one safety thesis
 
@@ -101,10 +107,14 @@ The intelligence is in *routing and parameter-filling*, not code generation — 
    - `messageActions`: `translateMessage`, `editMessage`, `deleteMessage`,
      `deleteAllMessagesBy`, `reactToMessage`, `deleteReaction`, `deleteAllReactions`,
      `pinMessage`/`unpinMessage`, `starMessage`/`unstarMessage`, `summarizeConversation`,
-     `generateResponse`, `suggestReplies`. The model resolves references ("Sam's last message")
-     to concrete ids itself. Reaction deletes are real deletes, never a toggle that could add
-     one back — RLS only allows deleting your own reaction row, so `deleteReaction` reports "no
-     such reaction" rather than silently reacting when the target isn't the viewer's own.
+     `generateResponse`, `suggestReplies`, `roastMe`/`complimentMe`. The model resolves
+     references ("Sam's last message") to concrete ids itself. Reaction deletes are real
+     deletes, never a toggle that could add one back — RLS only allows deleting your own
+     reaction row, so `deleteReaction` reports "no such reaction" rather than silently
+     reacting when the target isn't the viewer's own. `roastMe`/`complimentMe`
+     (`api/roast-or-compliment.js`, one endpoint, a `tone` param) always target the
+     requesting viewer specifically — never the other participant, since that's a
+     materially different and riskier feature than the one asked for.
    - `themeInstruction`: the appearance part of the request (including animations/one-shot
      effects — these are appearance, not a separate capability), delegated **verbatim to the
      existing `generateSpec`**. `themeMutation` (`"reset"|"randomize"`) is for explicit theme

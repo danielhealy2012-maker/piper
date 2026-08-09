@@ -74,6 +74,12 @@ export const MessageActionSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("suggestReplies"),
   }),
+  z.object({
+    kind: z.literal("roastMe"),
+  }),
+  z.object({
+    kind: z.literal("complimentMe"),
+  }),
   // Filters
   z.object({
     kind: z.literal("filterByAuthor"),
@@ -151,7 +157,7 @@ export function buildRouterPrompt(): string {
     "   Write: editMessage, deleteMessage, deleteAllMessagesBy",
     "   Reactions: reactToMessage, deleteReaction, deleteAllReactions",
     "   Annotations: pinMessage, unpinMessage, starMessage, unstarMessage",
-    "   Queries: summarizeConversation, generateResponse, suggestReplies",
+    "   Queries: summarizeConversation, generateResponse, suggestReplies, roastMe, complimentMe",
     "",
     "MESSAGE ACTION DETAILS:",
     '  - {"kind":"translateMessage","messageId":<id>,"targetLanguage":"French"} — any language.',
@@ -168,6 +174,8 @@ export function buildRouterPrompt(): string {
     '  - {"kind":"summarizeConversation"} — generate a summary.',
     '  - {"kind":"generateResponse"} — AI draft a reply.',
     '  - {"kind":"suggestReplies"} — 3 suggested replies.',
+    '  - {"kind":"roastMe"} — a short, playful, lighthearted roast of the current user based on the conversation. Examples: "roast me", "roast me based on this chat".',
+    '  - {"kind":"complimentMe"} — a short, warm compliment for the current user based on the conversation. Examples: "compliment me", "say something nice about me", "hype me up".',
     "",
     "Resolve message references yourself using the list below. Match by quote, position (\\\"last message\\\", \\\"first message\\\", \\\"second message\\\"), or author. Use the exact id from the list. NEVER invent an id.",
     "",

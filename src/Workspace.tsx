@@ -6,7 +6,7 @@ import { randomizeSpec } from "./engine/randomize";
 import { routeInstruction } from "./engine/route";
 import { formatHistory } from "./engine/history";
 import { translateText } from "./engine/translate";
-import { generateResponse, suggestReplies, summarizeConversation } from "./lib/queries";
+import { generateResponse, suggestReplies, summarizeConversation, roastOrCompliment } from "./lib/queries";
 import { errorMessage } from "./lib/errors";
 import { DEFAULT_SPEC, type Spec } from "./engine/spec";
 import type { ChatBackend, DisplayUser, SharedComponentRecord } from "./lib/backend";
@@ -61,7 +61,10 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
   const [log, setLog] = useState<LogEntry[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
   const [undoStack, setUndoStack] = useState<UndoOp[]>([]);
-  const [queryResult, setQueryResult] = useState<{ type: "summary" | "reply" | "suggestions"; content: string | string[] } | null>(null);
+  const [queryResult, setQueryResult] = useState<{
+    type: "summary" | "reply" | "suggestions" | "roast" | "compliment";
+    content: string | string[];
+  } | null>(null);
   const [pinnedMessageIds, setPinnedMessageIds] = useState<Set<string>>(new Set());
   const [starredMessageIds, setStarredMessageIds] = useState<Set<string>>(new Set());
   // Set when the router asked a clarifying question instead of guessing — the
@@ -643,6 +646,28 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
           continue;
         }
 
+        if (action.kind === "roastMe") {
+          const result = await roastOrCompliment(messages, users, backend.viewerId, "roast");
+          if (result.ok && result.message) {
+            setQueryResult({ type: "roast", content: result.message });
+            applied.push("roasted you");
+          } else {
+            notes.push(`couldn't roast you (${result.error})`);
+          }
+          continue;
+        }
+
+        if (action.kind === "complimentMe") {
+          const result = await roastOrCompliment(messages, users, backend.viewerId, "compliment");
+          if (result.ok && result.message) {
+            setQueryResult({ type: "compliment", content: result.message });
+            applied.push("complimented you");
+          } else {
+            notes.push(`couldn't compliment you (${result.error})`);
+          }
+          continue;
+        }
+
         if (action.kind === "filterByAuthor") {
           // Not implemented yet — no UI state consumes this. Report honestly
           // rather than claiming success for something that visibly does
@@ -805,6 +830,21 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
                     Dismiss
                   </button>
                 </div>
+              </div>
+            )}
+            {(queryResult.type === "roast" || queryResult.type === "compliment") && (
+              <div>
+                <div className="text-xs font-medium text-blue-700 mb-1">
+                  {queryResult.type === "roast" ? "🔥 Roast" : "💛 Compliment"}
+                </div>
+                <div className="text-sm text-blue-900">{queryResult.content}</div>
+                <button
+                  type="button"
+                  onClick={() => setQueryResult(null)}
+                  className="mt-2 text-xs text-blue-600 hover:text-blue-800"
+                >
+                  Dismiss
+                </button>
               </div>
             )}
             {queryResult.type === "suggestions" && (

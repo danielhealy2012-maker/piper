@@ -77,3 +77,37 @@ export async function suggestReplies(
     return { ok: false, error: errorMessage(err) };
   }
 }
+
+export interface RoastOrComplimentResult {
+  ok: boolean;
+  message?: string;
+  error?: string;
+}
+
+// One endpoint for both directions — same conversation context, only the
+// tone of the system prompt differs. `viewerId` picks WHO gets roasted/
+// complimented: always the person asking, never the other participant,
+// since "roast me" said by either person about the other would be a very
+// different (and much riskier) feature.
+export async function roastOrCompliment(
+  messages: ChatMessage[],
+  users: DisplayUser[],
+  viewerId: string,
+  tone: "roast" | "compliment",
+): Promise<RoastOrComplimentResult> {
+  try {
+    const res = await apiPost("/api/roast-or-compliment", {
+      messages: messages.map((m) => ({ authorId: m.authorId, text: m.text, time: m.time })),
+      users,
+      viewerId,
+      tone,
+    });
+    if (!res.ok) {
+      return { ok: false, error: "API error" };
+    }
+    const data = (await res.json()) as { message?: string; error?: string };
+    return data.message ? { ok: true, message: data.message } : { ok: false, error: data.error };
+  } catch (err) {
+    return { ok: false, error: errorMessage(err) };
+  }
+}
