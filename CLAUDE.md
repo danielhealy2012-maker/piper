@@ -108,7 +108,7 @@ The intelligence is in *routing and parameter-filling*, not code generation — 
      `deleteAllMessagesBy`, `reactToMessage`, `deleteReaction`, `deleteAllReactions`,
      `pinMessage`/`unpinMessage`, `starMessage`/`unstarMessage`, `summarizeConversation`,
      `generateResponse`, `suggestReplies`, `roastMe`/`complimentMe`,
-     `setNickname`/`clearNickname`. The model resolves references ("Sam's last message")
+     `setNickname`/`clearNickname`, `generateAvatar`. The model resolves references ("Sam's last message")
      to concrete ids itself. Reaction deletes are real deletes, never a toggle that could
      add one back — RLS only allows deleting your own reaction row, so `deleteReaction`
      reports "no such reaction" rather than silently reacting when the target isn't the
@@ -183,6 +183,18 @@ across the You/Sam viewer toggle.
   under the existing `image` usage kind (`api/_lib.js`'s `DAILY_LIMITS`). Not available in local
   dev (`server/proxy.mjs` returns a clean 503 for `/api/image`; the theme model's own fallback
   wallpaper is what's shown instead).
+- **Custom avatars** (`generateAvatar` router action, Phase 2 #11) reuse the same Replicate/Flux
+  pipeline via `api/_lib.js`'s `generateImageBuffer()` — factored out of `api/image.js` so the
+  polling-loop fix (a cold-started model can still be mid-flight when `Prefer: wait`'s window
+  closes) can't silently exist in only one of the two callers. Different trust shape than a
+  background: `wallpaperUrl` lives inside the model-generated Spec and is validated by `spec.ts`
+  on every write, but `profiles.avatar_url` (migration `0006_avatars.sql`) is a plain column the
+  existing `profiles_write` RLS (`id = auth.uid()`) would happily let a client set to ANY
+  external URL — so the client is never given direct write access to that column at all.
+  `api/avatar.js` (service role) is the only writer, and only after generating the image itself.
+  Same cache table as backgrounds (`generated_backgrounds`), namespaced by prompt hash
+  (`background:`/`avatar:` prefix) so an avatar and a background generated from the same words
+  never collide. Not available in local dev, same as backgrounds.
 - **3 slots**: `messageActions` (TranslateButton, SummarizeButton, CopyButton, PinButton,
   ReactionBar, ReadReceipt), `composerActions` (ToneShifter, ClearButton,
   VoiceNote, GifPicker, Poll, ScheduledSend, AIReplyDraft), `headerActions` (SearchBox,

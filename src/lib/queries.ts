@@ -78,6 +78,28 @@ export async function suggestReplies(
   }
 }
 
+export interface GenerateAvatarResult {
+  ok: boolean;
+  url?: string;
+  error?: string;
+}
+
+/** Phase 2 #11. Server-generated and server-written (api/avatar.js) — the
+ *  client never sets profiles.avatar_url directly, see that file for why. */
+export async function generateAvatar(prompt: string): Promise<GenerateAvatarResult> {
+  try {
+    const res = await apiPost("/api/avatar", { prompt });
+    if (!res.ok) {
+      if (res.status === 503) return { ok: false, error: "not available locally" };
+      return { ok: false, error: "API error" };
+    }
+    const data = (await res.json()) as { url?: string; error?: string };
+    return data.url ? { ok: true, url: data.url } : { ok: false, error: data.error };
+  } catch (err) {
+    return { ok: false, error: errorMessage(err) };
+  }
+}
+
 export interface RoastOrComplimentResult {
   ok: boolean;
   message?: string;

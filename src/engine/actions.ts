@@ -90,6 +90,11 @@ export const MessageActionSchema = z.discriminatedUnion("kind", [
     kind: z.literal("clearNickname"),
     authorId: z.string(),
   }),
+  // Avatar (SHARED — this is the requesting viewer's own public identity)
+  z.object({
+    kind: z.literal("generateAvatar"),
+    prompt: z.string().min(1).max(400),
+  }),
   // Filters
   z.object({
     kind: z.literal("filterByAuthor"),
@@ -169,6 +174,7 @@ export function buildRouterPrompt(): string {
     "   Annotations: pinMessage, unpinMessage, starMessage, unstarMessage",
     "   Queries: summarizeConversation, generateResponse, suggestReplies, roastMe, complimentMe",
     "   Nicknames (PERSONAL — only changes how YOU see the other person's name, never their real profile, never visible to them): setNickname, clearNickname",
+    "   Avatar (SHARED — this changes YOUR OWN public avatar image, visible to the other person, like changing a profile picture): generateAvatar",
     "",
     "MESSAGE ACTION DETAILS:",
     '  - {"kind":"translateMessage","messageId":<id>,"targetLanguage":"French"} — any language.',
@@ -189,6 +195,7 @@ export function buildRouterPrompt(): string {
     '  - {"kind":"complimentMe"} — a short, warm compliment for the current user based on the conversation. Examples: "compliment me", "say something nice about me", "hype me up".',
     '  - {"kind":"setNickname","authorId":<id>,"nickname":<string>} — from now on, YOU (not them) see that participant\'s name as the nickname everywhere their name is shown. Examples: "call Sam \'Sammy\'", "nickname Sam as Boss". Use the exact authorId from the participants list — never your own.',
     '  - {"kind":"clearNickname","authorId":<id>} — go back to their real name. Examples: "stop calling Sam Sammy", "remove Sam\'s nickname", "use Sam\'s real name again".',
+    '  - {"kind":"generateAvatar","prompt":<string>} — generate a new profile picture for the CURRENT USER (never the other participant — you cannot change someone else\'s avatar). You write the image generation prompt from their description. Examples: "make my avatar a cartoon fox", "set my profile picture to a robot", "change my avatar to a mountain landscape". This is a real AI-generated image, distinct from the appearance/theme system — route avatar requests here, never through themeInstruction.',
     "",
     "Resolve message references yourself using the list below. Match by quote, position (\\\"last message\\\", \\\"first message\\\", \\\"second message\\\"), or author. Use the exact id from the list. NEVER invent an id.",
     "",

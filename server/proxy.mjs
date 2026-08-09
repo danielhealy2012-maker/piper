@@ -398,13 +398,14 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (req.method === "POST" && req.url === "/api/image") {
-    // Real image generation (api/image.js) needs Supabase Storage + the
-    // generated_backgrounds cache table, which this bare Node proxy doesn't
-    // wire up — it only exists for the same-key-safety reason the other
-    // endpoints do (never ship a key to the browser). Piper's theme model
-    // already treats this as a normal generation failure and falls back to
-    // its own fixed-scene fallback, so local dev degrades gracefully.
+  if (req.method === "POST" && (req.url === "/api/image" || req.url === "/api/avatar")) {
+    // Real image generation (api/image.js, api/avatar.js) needs Supabase
+    // Storage + the generated_backgrounds cache table, which this bare Node
+    // proxy doesn't wire up — it only exists for the same-key-safety reason
+    // the other endpoints do (never ship a key to the browser). Piper's theme
+    // model already treats a background failure as a normal generation
+    // failure and falls back to its own fixed scene; the avatar action
+    // reports the same "not available locally" note rather than a raw error.
     sendJson(res, 503, { error: "image_generation_not_available_locally" });
     return;
   }

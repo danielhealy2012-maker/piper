@@ -93,6 +93,82 @@ export function sliceJson(raw) {
   return JSON.parse(raw.slice(start, end + 1));
 }
 
+// ---------------------------------------------------------------------------
+// Shared Replicate/Flux image generation — used by both api/image.js
+// (backgrounds) and api/avatar.js (Phase 2 #11). Factored out because the
+// polling loop below fixes a real bug (751aa12-adjacent: `Prefer: wait` only
+// holds the connection for a bounded window, and a cold-started model can
+// still be mid-flight when it closes) — duplicating this into a second file
+// would risk the fix living in only one of them.
+// ---------------------------------------------------------------------------
+export const REPLICATE_TOKEN = process.env.REPLICATE_API_TOKEN;
+const REPLICATE_OWNER = "black-forest-labs";
+const REPLICATE_NAME = "flux-schnell";
+
+let cachedVersionId = null;
+async function getLatestVersionId() {
+  if (cachedVersionId) return cachedVersionId;
+  const res = await fetch(`https://api.replicate.com/v1/models/${REPLICATE_OWNER}/${REPLICATE_NAME}`, {
+    headers: { Authorization: `Bearer ${REPLICATE_TOKEN}` },
+  });
+  if (!res.ok) throw new Error(`could not resolve model version (${res.status})`);
+  const data = await res.json();
+  const id = data?.latest_version?.id;
+  if (!id) throw new Error("model has no latest_version");
+  cachedVersionId = id;
+  return id;
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function waitForPrediction(prediction) {
+  let current = prediction;
+  const deadline = Date.now() + 45_000;
+  while (current.status !== "succeeded" && current.status !== "failed" && current.status !== "canceled") {
+    if (Date.now() > deadline) throw new Error("timed out waiting for image generation");
+    await sleep(1200);
+    const res = await fetch(current.urls.get, { headers: { Authorization: `Bearer ${REPLICATE_TOKEN}` } });
+    if (!res.ok) throw new Error(`could not poll prediction status (${res.status})`);
+    current = await res.json();
+  }
+  return current;
+}
+
+/** Generates one image and returns its raw bytes — caller decides where it
+ *  gets stored/cached. `styleSuffix` is appended to the prompt (backgrounds
+ *  and avatars want different framing: a scene vs. a centered portrait). */
+export async function generateImageBuffer(prompt, styleSuffix) {
+  const version = await getLatestVersionId();
+  const prediction = await fetch("https://api.replicate.com/v1/predictions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${REPLICATE_TOKEN}`,
+      "Content-Type": "application/json",
+      // Modest explicit wait, not the bare default — leaves most of the 60s
+      // function budget to the polling loop, which has its own visibility
+      // into status rather than blocking blind inside one long HTTP call.
+      Prefer: "wait=10",
+    },
+    body: JSON.stringify({ version, input: { prompt: `${prompt}, ${styleSuffix}` } }),
+  });
+  if (!prediction.ok) {
+    const text = await prediction.text();
+    throw new Error(`image provider error: ${text.slice(0, 200)}`);
+  }
+  const predictionData = await waitForPrediction(await prediction.json());
+  const output = Array.isArray(predictionData.output) ? predictionData.output[0] : predictionData.output;
+  if (predictionData.status !== "succeeded" || !output) {
+    throw new Error(`image generation ${predictionData.status || "failed"}${predictionData.error ? `: ${predictionData.error}` : ""}`);
+  }
+
+  const imageRes = await fetch(output);
+  if (!imageRes.ok) throw new Error("failed to fetch generated image");
+  const contentType = imageRes.headers.get("content-type") || "image/webp";
+  const ext = contentType.includes("png") ? "png" : contentType.includes("jpeg") ? "jpg" : "webp";
+  const buffer = Buffer.from(await imageRes.arrayBuffer());
+  return { buffer, contentType, ext };
+}
+
 export function logUsage(label, model, usage) {
   console.log(
     `[piper] ${label} model=${model} input_tokens=${usage?.input_tokens ?? "?"} output_tokens=${usage?.output_tokens ?? "?"}`,

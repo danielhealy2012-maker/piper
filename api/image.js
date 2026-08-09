@@ -9,57 +9,17 @@
 // validate that field against this project's own Storage host and reject
 // anything else.
 import crypto from "node:crypto";
-import { admin, errorMessage, meter, readJsonBody, requireUser, sendJson } from "./_lib.js";
+import { admin, errorMessage, generateImageBuffer, meter, readJsonBody, requireUser, sendJson, REPLICATE_TOKEN } from "./_lib.js";
 
-const REPLICATE_TOKEN = process.env.REPLICATE_API_TOKEN;
-const REPLICATE_OWNER = "black-forest-labs";
-const REPLICATE_NAME = "flux-schnell";
 const MAX_PROMPT_LENGTH = 400;
 const BUCKET = "backgrounds";
+const STYLE_SUFFIX = "flat illustration style, clean simple background, no text, no watermark";
 
 function promptHash(prompt) {
-  return crypto.createHash("sha256").update(prompt.trim().toLowerCase()).digest("hex");
-}
-
-// Module-scope cache: survives across warm invocations of the same
-// serverless instance, so most requests skip this lookup entirely. The
-// classic /v1/predictions endpoint needs a specific version hash, not a
-// model name — this resolves "latest" once instead of hardcoding a hash
-// that would silently go stale as the model is updated upstream.
-let cachedVersionId = null;
-async function getLatestVersionId() {
-  if (cachedVersionId) return cachedVersionId;
-  const res = await fetch(`https://api.replicate.com/v1/models/${REPLICATE_OWNER}/${REPLICATE_NAME}`, {
-    headers: { Authorization: `Bearer ${REPLICATE_TOKEN}` },
-  });
-  if (!res.ok) throw new Error(`could not resolve model version (${res.status})`);
-  const data = await res.json();
-  const id = data?.latest_version?.id;
-  if (!id) throw new Error("model has no latest_version");
-  cachedVersionId = id;
-  return id;
-}
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-// `Prefer: wait` on the initial POST only holds the connection for a bounded
-// window — a cold-started model (first real invocation, or one Replicate
-// spun down) can still be "starting"/"processing" when that window closes,
-// which is exactly what happened on the first real request. Poll the
-// prediction's own status URL until it actually finishes rather than trusting
-// the single initial response. Bounded to stay well inside vercel.json's
-// 60s maxDuration for this function.
-async function waitForPrediction(prediction) {
-  let current = prediction;
-  const deadline = Date.now() + 45_000;
-  while (current.status !== "succeeded" && current.status !== "failed" && current.status !== "canceled") {
-    if (Date.now() > deadline) throw new Error("timed out waiting for image generation");
-    await sleep(1200);
-    const res = await fetch(current.urls.get, { headers: { Authorization: `Bearer ${REPLICATE_TOKEN}` } });
-    if (!res.ok) throw new Error(`could not poll prediction status (${res.status})`);
-    current = await res.json();
-  }
-  return current;
+  // "background:" namespace so an avatar and a background generated from the
+  // same words (api/avatar.js hashes with a different namespace) never
+  // collide in the shared generated_backgrounds cache table.
+  return crypto.createHash("sha256").update(`background:${prompt.trim().toLowerCase()}`).digest("hex");
 }
 
 export default async function handler(req, res) {
@@ -89,45 +49,10 @@ export default async function handler(req, res) {
 
     if (!(await meter(user, "image", res))) return;
 
-    const version = await getLatestVersionId();
-    const prediction = await fetch("https://api.replicate.com/v1/predictions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${REPLICATE_TOKEN}`,
-        "Content-Type": "application/json",
-        // Modest explicit wait, not the bare default — leaves most of the
-        // 60s function budget to the polling loop below, which has its own
-        // visibility into status rather than blocking blind inside one
-        // long HTTP call.
-        Prefer: "wait=10",
-      },
-      body: JSON.stringify({
-        version,
-        input: {
-          prompt: `${prompt}, flat illustration style, clean simple background, no text, no watermark`,
-        },
-      }),
-    });
-    if (!prediction.ok) {
-      const text = await prediction.text();
-      return sendJson(res, 502, { error: `image provider error: ${text.slice(0, 200)}` });
-    }
-    const predictionData = await waitForPrediction(await prediction.json());
-    const output = Array.isArray(predictionData.output) ? predictionData.output[0] : predictionData.output;
-    if (predictionData.status !== "succeeded" || !output) {
-      return sendJson(res, 502, {
-        error: `image generation ${predictionData.status || "failed"}${predictionData.error ? `: ${predictionData.error}` : ""}`,
-      });
-    }
+    const { buffer, contentType, ext } = await generateImageBuffer(prompt, STYLE_SUFFIX);
 
     // Re-host: Replicate's own delivery URL isn't guaranteed permanent —
     // download it once and store our own copy for a stable long-term URL.
-    const imageRes = await fetch(output);
-    if (!imageRes.ok) return sendJson(res, 502, { error: "failed to fetch generated image" });
-    const contentType = imageRes.headers.get("content-type") || "image/webp";
-    const ext = contentType.includes("png") ? "png" : contentType.includes("jpeg") ? "jpg" : "webp";
-    const buffer = Buffer.from(await imageRes.arrayBuffer());
-
     const path = `${hash}.${ext}`;
     const { error: uploadError } = await admin.storage.from(BUCKET).upload(path, buffer, {
       contentType,

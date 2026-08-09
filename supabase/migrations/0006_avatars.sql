@@ -1,0 +1,17 @@
+-- Custom avatars (Phase 2 #11) — reuses the existing profiles table and RLS.
+--
+-- Unlike nicknames (0005), an avatar is genuinely shared identity: if you set
+-- yours, the other person is SUPPOSED to see it, the same way display_name
+-- already works. So this is a new column on the existing profiles table, not
+-- a new personal table — profiles_read ("anyone signed in can read") and
+-- profiles_write ("id = auth.uid()") from 0001_init.sql already say exactly
+-- the right thing with zero new policy code.
+--
+-- The column itself is NOT the trust boundary though: RLS only proves WHO is
+-- allowed to write to a row, not WHAT they write. A client with direct
+-- profiles_write access could set avatar_url to any arbitrary external URL —
+-- same class of risk wallpaperUrl already solved for backgrounds. The actual
+-- boundary is that nothing in the client ever writes this column directly:
+-- only api/avatar.js (service-role) does, after generating the image itself,
+-- so the value is always a URL under this project's own Storage host.
+alter table public.profiles add column if not exists avatar_url text;

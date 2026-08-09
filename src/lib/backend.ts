@@ -33,6 +33,9 @@ export interface DisplayUser {
   name: string;
   initials: string;
   color: string;
+  /** Custom avatar image (Phase 2 #11) — shared/public, unlike nicknames.
+   *  Falls back to the initials-circle when absent. */
+  avatarUrl?: string | null;
 }
 
 /**
@@ -304,6 +307,7 @@ export function createSupabaseBackend(conversationId: string, userId: string): C
         name: p.display_name,
         initials: initialsOf(p.display_name),
         color: p.avatar_color,
+        avatarUrl: p.avatar_url,
       }));
     },
     async fetchMessages() {

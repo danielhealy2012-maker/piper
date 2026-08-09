@@ -6,7 +6,7 @@ import { randomizeSpec } from "./engine/randomize";
 import { routeInstruction } from "./engine/route";
 import { formatHistory } from "./engine/history";
 import { translateText } from "./engine/translate";
-import { generateResponse, suggestReplies, summarizeConversation, roastOrCompliment } from "./lib/queries";
+import { generateResponse, suggestReplies, summarizeConversation, roastOrCompliment, generateAvatar } from "./lib/queries";
 import { errorMessage } from "./lib/errors";
 import { DEFAULT_SPEC, type Spec } from "./engine/spec";
 import type { ChatBackend, DisplayUser, SharedComponentRecord } from "./lib/backend";
@@ -711,6 +711,22 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
             },
           });
           applied.push("cleared nickname");
+          continue;
+        }
+
+        if (action.kind === "generateAvatar") {
+          const result = await generateAvatar(action.prompt);
+          if (result.ok && result.url) {
+            // No undo for this one, unlike everything else here — restoring
+            // a PRIOR avatar_url via a direct client write would reintroduce
+            // exactly the "client can set an arbitrary avatar_url" risk
+            // api/avatar.js exists to close (see that file). The user can
+            // always just ask to change it again.
+            setUsers(await backend.getUsers());
+            applied.push("generated a new avatar");
+          } else {
+            notes.push(`couldn't generate avatar (${result.error})`);
+          }
           continue;
         }
 

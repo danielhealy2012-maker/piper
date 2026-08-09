@@ -91,7 +91,7 @@ export async function listMembers(conversationId: string): Promise<Profile[]> {
   if (ids.length === 0) return [];
   const { data: profiles } = await sb
     .from("profiles")
-    .select("id, display_name, avatar_color")
+    .select("id, display_name, avatar_color, avatar_url")
     .in("id", ids);
   return (profiles ?? []) as Profile[];
 }

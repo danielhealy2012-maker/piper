@@ -151,12 +151,16 @@ export function Chat({
         className={`flex items-center gap-2 border-b px-4 py-3 ${headerTextClass} ${headerBorderClass}`}
         style={{ ...(dark ? { background: "#1c1c1e" } : undefined), ...(spec.customCSS.header ?? {}) }}
       >
-        <div
-          className="flex h-9 w-9 items-center justify-center rounded-full text-xs font-semibold text-white"
-          style={{ background: other?.color ?? "#c7c7cc" }}
-        >
-          {other?.initials ?? "…"}
-        </div>
+        {other?.avatarUrl ? (
+          <img src={other.avatarUrl} alt="" className="h-9 w-9 shrink-0 rounded-full object-cover" />
+        ) : (
+          <div
+            className="flex h-9 w-9 items-center justify-center rounded-full text-xs font-semibold text-white"
+            style={{ background: other?.color ?? "#c7c7cc" }}
+          >
+            {other?.initials ?? "…"}
+          </div>
+        )}
         <div className="flex-1 leading-tight">
           <div className="font-semibold">{title}</div>
           <div className={`text-[11px] ${metaTextClass}`}>active now</div>
@@ -209,12 +213,16 @@ export function Chat({
           return (
             <div key={message.id} className={`flex items-end gap-2 ${outgoing ? "flex-row-reverse" : "flex-row"}`}>
               {!outgoing && theme.showAvatars ? (
-                <div
-                  className="mb-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
-                  style={{ background: author?.color }}
-                >
-                  {author?.initials}
-                </div>
+                author?.avatarUrl ? (
+                  <img src={author.avatarUrl} alt="" className="mb-1 h-6 w-6 shrink-0 rounded-full object-cover" />
+                ) : (
+                  <div
+                    className="mb-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
+                    style={{ background: author?.color }}
+                  >
+                    {author?.initials}
+                  </div>
+                )
               ) : null}
               <div className={`flex max-w-[75%] flex-col ${outgoing ? "items-end" : "items-start"}`}>
                 <div
