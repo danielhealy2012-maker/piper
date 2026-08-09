@@ -71,11 +71,21 @@ export const THEME_TOKENS: Record<string, ThemeTokenDescriptor> = {
   textColorOutgoing: { kind: "color", label: "Text color for messages you send" },
   textColorIncoming: { kind: "color", label: "Text color for messages you receive" },
   accentColor: { kind: "color", label: "Send button, highlights" },
-  bubbleScale: { kind: "number", label: "Bubble size scale", min: 0.8, max: 1.6 },
+  bubbleScale: {
+    kind: "number",
+    label: "Bubble size scale — raise this (e.g. 1.3-1.6) for larger-text/bigger-tap-target/accessibility requests",
+    min: 0.8,
+    max: 1.6,
+  },
   cornerStyle: { kind: "enum", label: "Bubble corner style", values: CORNER_STYLES },
   sendButtonStyle: { kind: "enum", label: "Send button icon", values: SEND_BUTTON_STYLES },
-  fontFamily: { kind: "enum", label: "Font family", values: FONT_FAMILIES },
-  density: { kind: "enum", label: "Message row spacing", values: DENSITIES },
+  fontFamily: {
+    kind: "enum",
+    label:
+      "Font family. For dyslexia/readability/low-vision requests, prefer \"system\" or \"rounded\" (both sans-serif) — do NOT pick \"serif\", which reads as more 'accessible' but is actually harder to read for dyslexic users; pair with larger bubbleScale and \"spacious\" density for those requests too",
+    values: FONT_FAMILIES,
+  },
+  density: { kind: "enum", label: "Message row spacing — \"spacious\" also helps larger-tap-target/accessibility requests", values: DENSITIES },
   wallpaper: { kind: "enum", label: "Chat background base layer", values: MODEL_SETTABLE_WALLPAPERS },
   wallpaperColor: {
     kind: "color",

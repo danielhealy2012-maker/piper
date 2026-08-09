@@ -66,6 +66,7 @@
 | Suggest 3 replies | ✅ | `/api/suggest-replies`, different tones/approaches |
 | Roast me / compliment me | ✅ | `/api/roast-or-compliment` (Phase 2 #10), one endpoint with a `tone` param. Always targets the requesting viewer specifically (never the other participant), grounded in real conversation content when there's anything usable |
 | Custom nicknames per viewer | ✅ | Phase 2 #12: "call Sam 'Sammy'" (`setNickname`/`clearNickname`). PERSONAL only — how you see the other participant's name, never their real profile, never visible to them. New `member_nicknames` table (**needs migration 0005**), kept out of the model-generated Spec entirely so it's never at risk of being silently dropped by a theme-generation call that wasn't told to preserve it |
+| Accessibility presets | ✅ | Phase 2 #13: "dyslexia friendly", "high contrast mode", "bigger tap targets" — emergent from existing tokens (fontFamily, bubbleScale, density, colors), no new architecture. Fixed one real correctness bug found while verifying live: "dyslexia friendly" was picking `serif`, which reads as more accessible but is actually harder for dyslexic readers than the sans-serif options — registry hint now steers it to `system`/`rounded` and nudges `bubbleScale`/`density` up for any accessibility-flavored request |
 | All queries are metered | ✅ | Count against daily per-user API cap |
 
 ### Conversations
