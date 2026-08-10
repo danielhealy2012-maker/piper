@@ -12,20 +12,6 @@ import { DEFAULT_SPEC, type Spec } from "./engine/spec";
 import type { ChatBackend, DisplayUser, SharedComponentRecord } from "./lib/backend";
 import type { ChatMessage } from "./lib/types";
 
-const EXAMPLE_CHIPS = [
-  "make my bubbles green with tails",
-  "blue to purple gradient background",
-  "translate the last message to Japanese",
-  "react to the last message with 🔥",
-  "delete my last message",
-  "delete all reactions on the last message",
-  "delete all of Sam's messages",
-  "star the one that says grab dinner",
-  "summarize this conversation",
-  "randomize my theme",
-  "reset theme",
-];
-
 interface LogEntry {
   instruction: string;
   summary: string;
@@ -843,7 +829,7 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
 
   return (
     <div className="flex h-full min-h-screen w-full flex-col gap-6 bg-neutral-100 p-6 lg:flex-row">
-      <div className="flex w-full flex-col gap-4 lg:w-[26rem]">
+      <div className="flex w-full flex-col gap-4 lg:w-[32rem]">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Piper</h1>
           <p className="mt-1 text-sm text-black/60">
@@ -873,199 +859,198 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
           </div>
         ) : null}
 
-        <form
-          className="flex items-center gap-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void runInstruction(instruction);
-          }}
-        >
-          <input
-            value={instruction}
-            onChange={(e) => setInstruction(e.target.value)}
-            placeholder={pendingClarification ? "Answer the question below…" : "Tell Piper what to do…"}
-            className={`flex-1 rounded-full border bg-white px-4 py-2 text-sm outline-none focus:border-black/30 ${
-              pendingClarification ? "border-sky-300" : "border-black/15"
-            }`}
-          />
-          <button
-            type="submit"
-            disabled={busy || !instruction.trim()}
-            className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
-          >
-            {busy ? "…" : "Send"}
-          </button>
-        </form>
-
-        {pendingClarification ? (
-          // The question itself is already visible as the last bubble in the
-          // thread below — this is just the "still waiting on you" affordance
-          // plus a way out if you'd rather ask something else instead.
-          <div className="flex items-center gap-2 px-1 text-xs text-sky-700">
-            <span>❓ Waiting for your answer below</span>
-            <button type="button" onClick={() => setPendingClarification(null)} className="underline hover:text-sky-900">
-              Cancel
-            </button>
+        {/* One window, like a real chat with Piper: header, scrollable
+            thread, contextual panels, composer — all inside a single
+            bordered container instead of a form floating separately above
+            an unrelated-looking log box. */}
+        <div className="flex min-h-[560px] flex-1 flex-col overflow-hidden rounded-2xl border border-black/10 bg-white">
+          <div className="flex shrink-0 items-center justify-between border-b border-black/10 px-3 py-2">
+            <div className="text-xs font-medium uppercase tracking-wide text-black/40">Chat with Piper</div>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => void runInstruction("reset to default")}
+                disabled={busy}
+                className="rounded-full border border-black/10 px-2 py-0.5 text-xs text-black/60 hover:border-black/25 disabled:opacity-30"
+              >
+                ↺ Reset to default
+              </button>
+              <button
+                type="button"
+                onClick={() => void undo()}
+                disabled={undoStack.length === 0}
+                className="rounded-full border border-black/10 px-2 py-0.5 text-xs text-black/60 hover:border-black/25 disabled:opacity-30"
+              >
+                ↶ Undo
+              </button>
+            </div>
           </div>
-        ) : notice ? (
-          <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            <span className="mt-0.5">⚠</span>
-            <span className="flex-1">{notice}</span>
-            <button
-              type="button"
-              onClick={() => setNotice(null)}
-              className="text-amber-500 hover:text-amber-700"
-              aria-label="Dismiss"
-            >
-              ✕
-            </button>
-          </div>
-        ) : null}
 
-        {queryResult ? (
-          <div className="flex flex-col gap-2 rounded-xl border border-blue-300 bg-blue-50 px-3 py-2">
-            {queryResult.type === "summary" && (
-              <div>
-                <div className="text-xs font-medium text-blue-700 mb-1">Summary</div>
-                <div className="text-sm text-blue-900">{queryResult.content}</div>
-                <button
-                  type="button"
-                  onClick={() => setQueryResult(null)}
-                  className="mt-2 text-xs text-blue-600 hover:text-blue-800"
-                >
-                  Dismiss
-                </button>
-              </div>
+          <div className="flex-1 overflow-y-auto p-3">
+            {log.length === 0 ? (
+              <div className="text-sm text-black/40">No changes yet — try an instruction, or ask a question.</div>
+            ) : (
+              <ul className="flex flex-col gap-2.5">
+                {log.map((entry, i) => {
+                  const style: Record<LogEntry["kind"], { bubble: string; icon: string }> = {
+                    applied: { bubble: "bg-green-50 text-green-900", icon: "✓" },
+                    clarifying: { bubble: "bg-sky-50 text-sky-900", icon: "❓" },
+                    conversational: { bubble: "bg-black/[0.04] text-black/80", icon: "💬" },
+                    failed: { bubble: "bg-amber-50 text-amber-900", icon: "⚠" },
+                  };
+                  const { bubble, icon } = style[entry.kind];
+                  return (
+                    <li key={i} className="flex flex-col gap-1">
+                      {/* Your turn — styled like an outgoing bubble, right-aligned */}
+                      <div className="self-end max-w-[85%] rounded-2xl rounded-br-sm bg-black px-3 py-1.5 text-sm text-white">
+                        {entry.instruction}
+                      </div>
+                      {/* Piper's turn — colored by outcome, left-aligned */}
+                      <div className={`self-start flex max-w-[85%] items-start gap-1.5 rounded-2xl rounded-bl-sm px-3 py-1.5 text-sm ${bubble}`}>
+                        <span className="mt-0.5 shrink-0">{icon}</span>
+                        <span>{entry.summary}</span>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
             )}
-            {queryResult.type === "reply" && (
-              <div>
-                <div className="text-xs font-medium text-blue-700 mb-1">Draft Reply</div>
-                <div className="text-sm text-blue-900 mb-2">{queryResult.content}</div>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setInstruction(queryResult.content as string);
-                      setQueryResult(null);
-                    }}
-                    className="text-xs rounded px-2 py-1 bg-blue-200 text-blue-900 hover:bg-blue-300"
-                  >
-                    Use this
-                  </button>
+            <div ref={logEndRef} />
+          </div>
+
+          {pendingClarification ? (
+            // The question itself is already visible as the last bubble in
+            // the thread above — this is just the "still waiting on you"
+            // affordance plus a way out if you'd rather ask something else.
+            <div className="flex shrink-0 items-center gap-2 border-t border-black/10 px-3 py-1.5 text-xs text-sky-700">
+              <span>❓ Waiting for your answer</span>
+              <button type="button" onClick={() => setPendingClarification(null)} className="underline hover:text-sky-900">
+                Cancel
+              </button>
+            </div>
+          ) : notice ? (
+            <div className="flex shrink-0 items-start gap-2 border-t border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              <span className="mt-0.5">⚠</span>
+              <span className="flex-1">{notice}</span>
+              <button
+                type="button"
+                onClick={() => setNotice(null)}
+                className="text-amber-500 hover:text-amber-700"
+                aria-label="Dismiss"
+              >
+                ✕
+              </button>
+            </div>
+          ) : null}
+
+          {queryResult ? (
+            <div className="flex shrink-0 flex-col gap-2 border-t border-blue-100 bg-blue-50 px-3 py-2">
+              {queryResult.type === "summary" && (
+                <div>
+                  <div className="text-xs font-medium text-blue-700 mb-1">Summary</div>
+                  <div className="text-sm text-blue-900">{queryResult.content}</div>
                   <button
                     type="button"
                     onClick={() => setQueryResult(null)}
-                    className="text-xs text-blue-600 hover:text-blue-800"
+                    className="mt-2 text-xs text-blue-600 hover:text-blue-800"
                   >
                     Dismiss
                   </button>
                 </div>
-              </div>
-            )}
-            {(queryResult.type === "roast" || queryResult.type === "compliment") && (
-              <div>
-                <div className="text-xs font-medium text-blue-700 mb-1">
-                  {queryResult.type === "roast" ? "🔥 Roast" : "💛 Compliment"}
-                </div>
-                <div className="text-sm text-blue-900">{queryResult.content}</div>
-                <button
-                  type="button"
-                  onClick={() => setQueryResult(null)}
-                  className="mt-2 text-xs text-blue-600 hover:text-blue-800"
-                >
-                  Dismiss
-                </button>
-              </div>
-            )}
-            {queryResult.type === "suggestions" && (
-              <div>
-                <div className="text-xs font-medium text-blue-700 mb-2">Suggested Replies</div>
-                <div className="flex flex-col gap-2">
-                  {(queryResult.content as string[]).map((reply, i) => (
+              )}
+              {queryResult.type === "reply" && (
+                <div>
+                  <div className="text-xs font-medium text-blue-700 mb-1">Draft Reply</div>
+                  <div className="text-sm text-blue-900 mb-2">{queryResult.content}</div>
+                  <div className="flex gap-2">
                     <button
-                      key={i}
                       type="button"
                       onClick={() => {
-                        void handleSend(reply);
+                        setInstruction(queryResult.content as string);
                         setQueryResult(null);
                       }}
-                      className="text-left text-sm rounded px-2 py-1.5 bg-white border border-blue-200 text-blue-900 hover:bg-blue-100 transition"
+                      className="text-xs rounded px-2 py-1 bg-blue-200 text-blue-900 hover:bg-blue-300"
                     >
-                      {reply}
+                      Use this
                     </button>
-                  ))}
+                    <button
+                      type="button"
+                      onClick={() => setQueryResult(null)}
+                      className="text-xs text-blue-600 hover:text-blue-800"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setQueryResult(null)}
-                  className="mt-2 text-xs text-blue-600 hover:text-blue-800"
-                >
-                  Dismiss
-                </button>
-              </div>
-            )}
-          </div>
-        ) : null}
-
-        <div className="flex flex-wrap gap-1.5">
-          {EXAMPLE_CHIPS.map((chip) => (
-            <button
-              key={chip}
-              type="button"
-              disabled={busy}
-              onClick={() => void runInstruction(chip)}
-              className="rounded-full border border-black/10 bg-white px-2.5 py-1 text-xs text-black/60 hover:border-black/25 disabled:opacity-40"
-            >
-              {chip}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex-1 overflow-y-auto rounded-2xl border border-black/10 bg-white p-3">
-          <div className="mb-2 flex items-center justify-between">
-            <div className="text-xs font-medium uppercase tracking-wide text-black/40">
-              Chat with Piper
+              )}
+              {(queryResult.type === "roast" || queryResult.type === "compliment") && (
+                <div>
+                  <div className="text-xs font-medium text-blue-700 mb-1">
+                    {queryResult.type === "roast" ? "🔥 Roast" : "💛 Compliment"}
+                  </div>
+                  <div className="text-sm text-blue-900">{queryResult.content}</div>
+                  <button
+                    type="button"
+                    onClick={() => setQueryResult(null)}
+                    className="mt-2 text-xs text-blue-600 hover:text-blue-800"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              )}
+              {queryResult.type === "suggestions" && (
+                <div>
+                  <div className="text-xs font-medium text-blue-700 mb-2">Suggested Replies</div>
+                  <div className="flex flex-col gap-2">
+                    {(queryResult.content as string[]).map((reply, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => {
+                          void handleSend(reply);
+                          setQueryResult(null);
+                        }}
+                        className="text-left text-sm rounded px-2 py-1.5 bg-white border border-blue-200 text-blue-900 hover:bg-blue-100 transition"
+                      >
+                        {reply}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setQueryResult(null)}
+                    className="mt-2 text-xs text-blue-600 hover:text-blue-800"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              )}
             </div>
+          ) : null}
+
+          <form
+            className="flex shrink-0 items-center gap-2 border-t border-black/10 p-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void runInstruction(instruction);
+            }}
+          >
+            <input
+              value={instruction}
+              onChange={(e) => setInstruction(e.target.value)}
+              placeholder={pendingClarification ? "Answer the question above…" : "Tell Piper what to do…"}
+              className={`flex-1 rounded-full border bg-white px-4 py-2 text-sm outline-none focus:border-black/30 ${
+                pendingClarification ? "border-sky-300" : "border-black/15"
+              }`}
+            />
             <button
-              type="button"
-              onClick={() => void undo()}
-              disabled={undoStack.length === 0}
-              className="rounded-full border border-black/10 px-2 py-0.5 text-xs text-black/60 hover:border-black/25 disabled:opacity-30"
+              type="submit"
+              disabled={busy || !instruction.trim()}
+              className="rounded-full bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
             >
-              ↶ Undo
+              {busy ? "…" : "Send"}
             </button>
-          </div>
-          {log.length === 0 ? (
-            <div className="text-sm text-black/40">
-              No changes yet — try an instruction, ask a question, or try an example.
-            </div>
-          ) : (
-            <ul className="flex flex-col gap-2.5">
-              {log.map((entry, i) => {
-                const style: Record<LogEntry["kind"], { bubble: string; icon: string }> = {
-                  applied: { bubble: "bg-green-50 text-green-900", icon: "✓" },
-                  clarifying: { bubble: "bg-sky-50 text-sky-900", icon: "❓" },
-                  conversational: { bubble: "bg-black/[0.04] text-black/80", icon: "💬" },
-                  failed: { bubble: "bg-amber-50 text-amber-900", icon: "⚠" },
-                };
-                const { bubble, icon } = style[entry.kind];
-                return (
-                  <li key={i} className="flex flex-col gap-1">
-                    {/* Your turn — styled like an outgoing bubble, right-aligned */}
-                    <div className="self-end max-w-[85%] rounded-2xl rounded-br-sm bg-black px-3 py-1.5 text-sm text-white">
-                      {entry.instruction}
-                    </div>
-                    {/* Piper's turn — colored by outcome, left-aligned */}
-                    <div className={`self-start flex max-w-[85%] items-start gap-1.5 rounded-2xl rounded-bl-sm px-3 py-1.5 text-sm ${bubble}`}>
-                      <span className="mt-0.5 shrink-0">{icon}</span>
-                      <span>{entry.summary}</span>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-          <div ref={logEndRef} />
+          </form>
         </div>
       </div>
 
