@@ -25,6 +25,15 @@ export function rowGap(density: Theme["density"]): number {
   }
 }
 
+/** Matches a single-line bubble's own height at this bubbleScale, so a
+ *  per-message avatar reads as sized to the bubble it sits next to instead
+ *  of a small fixed icon — derived from the exact numbers bubbleStyle()
+ *  below uses (padding: 0.5rem * scale each side, plus ~1.2x line-height on
+ *  a bubbleScale-rem font), not eyeballed separately from it. */
+export function avatarSize(bubbleScale: Theme["bubbleScale"]): number {
+  return Math.round(35 * bubbleScale);
+}
+
 export function fontStack(font: Theme["fontFamily"]): string {
   switch (font) {
     case "system":

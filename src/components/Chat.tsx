@@ -3,7 +3,7 @@ import { DEFAULT_SPEC, type Spec } from "../engine/spec";
 import type { ChatMessage } from "../lib/types";
 import type { DisplayUser } from "../lib/backend";
 import { renderAction, type TranslationEntry } from "./slots";
-import { bubbleStyle, fontStack, isDarkWallpaper, rowGap, sentimentColor, wallpaperStyle } from "./theme";
+import { avatarSize, bubbleStyle, fontStack, isDarkWallpaper, rowGap, sentimentColor, wallpaperStyle } from "./theme";
 import { runEffect } from "./effects";
 import { CustomComponentSlot } from "./CustomComponentSlot";
 
@@ -230,7 +230,7 @@ export function Chat({
 
           return (
             <div key={message.id} className={`flex items-end gap-2 ${outgoing ? "flex-row-reverse" : "flex-row"}`}>
-              {theme.showAvatars ? <Avatar user={author} size={24} className="mb-1" /> : null}
+              {theme.showAvatars ? <Avatar user={author} size={avatarSize(theme.bubbleScale)} className="mb-1" /> : null}
               <div className={`flex max-w-[75%] flex-col ${outgoing ? "items-end" : "items-start"}`}>
                 <div
                   style={{
