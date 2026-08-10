@@ -30,6 +30,12 @@ interface LogEntry {
   instruction: string;
   summary: string;
   matched: boolean;
+  // Presentation only — history.ts (which feeds the model) only ever reads
+  // `matched`. "clarifying": Piper asked a question instead of acting.
+  // "conversational": a genuine Q&A/comment turn, feasible:true with no
+  // action taken — NOT a failure, so it must not read as one. "applied"/
+  // "failed" are what `matched` already meant, just named for the UI.
+  kind: "applied" | "clarifying" | "conversational" | "failed";
 }
 
 /** Undo is a stack of INVERSE OPERATIONS, not state snapshots. With a shared
@@ -382,8 +388,11 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
     }));
   }
 
-  const logResult = (instructionText: string, summary: string, matched: boolean) =>
-    setLog((prev) => [...prev, { instruction: instructionText, summary, matched }]);
+  const logResult = (instructionText: string, summary: string, matched: boolean, kind?: LogEntry["kind"]) =>
+    setLog((prev) => [
+      ...prev,
+      { instruction: instructionText, summary, matched, kind: kind ?? (matched ? "applied" : "failed") },
+    ]);
 
   async function runInstruction(text: string) {
     const trimmed = text.trim();
@@ -446,8 +455,10 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
       if (routed.plan.needsClarification) {
         const question = routed.plan.reply || "Could you clarify what you mean?";
         setPendingClarification(effectiveInstruction);
-        logResult(trimmed, question, false);
-        setNotice(question);
+        // Not setNotice(question) — the question now shows in the threaded
+        // chat log itself (via logResult below), so the separate amber/blue
+        // notice banner would just be a duplicate of what's already on screen.
+        logResult(trimmed, question, false, "clarifying");
         setInstruction("");
         return;
       }
@@ -807,9 +818,17 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
         });
         logResult(trimmed, plan.reply || applied.join(", "), true);
         setNotice(notes.length ? notes.join("; ") : null);
+      } else if (notes.length === 0 && plan.feasible && plan.reply) {
+        // Nothing was applied, nothing failed, and the router marked this
+        // feasible with an answer — a genuine conversational turn ("why does
+        // it look like that", "what other colors could work"), not a failed
+        // instruction. Must not read as an error in the UI or count toward
+        // "I couldn't do that" framing.
+        logResult(trimmed, plan.reply, false, "conversational");
+        setNotice(null);
       } else {
         const summary = plan.reply || notes.join("; ") || "I couldn't do that one.";
-        logResult(trimmed, summary, false);
+        logResult(trimmed, summary, false, "failed");
         setNotice(summary);
       }
       setInstruction("");
@@ -864,7 +883,7 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
           <input
             value={instruction}
             onChange={(e) => setInstruction(e.target.value)}
-            placeholder={pendingClarification ? "Answer the question above…" : "Tell Piper what to do…"}
+            placeholder={pendingClarification ? "Answer the question below…" : "Tell Piper what to do…"}
             className={`flex-1 rounded-full border bg-white px-4 py-2 text-sm outline-none focus:border-black/30 ${
               pendingClarification ? "border-sky-300" : "border-black/15"
             }`}
@@ -879,19 +898,13 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
         </form>
 
         {pendingClarification ? (
-          <div className="flex items-start gap-2 rounded-xl border border-sky-300 bg-sky-50 px-3 py-2 text-sm text-sky-800">
-            <span className="mt-0.5">❓</span>
-            <span className="flex-1">{notice}</span>
-            <button
-              type="button"
-              onClick={() => {
-                setPendingClarification(null);
-                setNotice(null);
-              }}
-              className="text-sky-500 hover:text-sky-700"
-              aria-label="Cancel"
-            >
-              ✕
+          // The question itself is already visible as the last bubble in the
+          // thread below — this is just the "still waiting on you" affordance
+          // plus a way out if you'd rather ask something else instead.
+          <div className="flex items-center gap-2 px-1 text-xs text-sky-700">
+            <span>❓ Waiting for your answer below</span>
+            <button type="button" onClick={() => setPendingClarification(null)} className="underline hover:text-sky-900">
+              Cancel
             </button>
           </div>
         ) : notice ? (
@@ -1011,7 +1024,7 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
         <div className="flex-1 overflow-y-auto rounded-2xl border border-black/10 bg-white p-3">
           <div className="mb-2 flex items-center justify-between">
             <div className="text-xs font-medium uppercase tracking-wide text-black/40">
-              Change log
+              Chat with Piper
             </div>
             <button
               type="button"
@@ -1024,18 +1037,32 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
           </div>
           {log.length === 0 ? (
             <div className="text-sm text-black/40">
-              No changes yet — try an instruction or an example.
+              No changes yet — try an instruction, ask a question, or try an example.
             </div>
           ) : (
-            <ul className="flex flex-col gap-2 text-sm">
-              {log.map((entry, i) => (
-                <li key={i}>
-                  <div className="text-black/70">{entry.instruction}</div>
-                  <div className={entry.matched ? "text-green-600" : "text-amber-600"}>
-                    {entry.matched ? "✓" : "›"} {entry.summary}
-                  </div>
-                </li>
-              ))}
+            <ul className="flex flex-col gap-2.5">
+              {log.map((entry, i) => {
+                const style: Record<LogEntry["kind"], { bubble: string; icon: string }> = {
+                  applied: { bubble: "bg-green-50 text-green-900", icon: "✓" },
+                  clarifying: { bubble: "bg-sky-50 text-sky-900", icon: "❓" },
+                  conversational: { bubble: "bg-black/[0.04] text-black/80", icon: "💬" },
+                  failed: { bubble: "bg-amber-50 text-amber-900", icon: "⚠" },
+                };
+                const { bubble, icon } = style[entry.kind];
+                return (
+                  <li key={i} className="flex flex-col gap-1">
+                    {/* Your turn — styled like an outgoing bubble, right-aligned */}
+                    <div className="self-end max-w-[85%] rounded-2xl rounded-br-sm bg-black px-3 py-1.5 text-sm text-white">
+                      {entry.instruction}
+                    </div>
+                    {/* Piper's turn — colored by outcome, left-aligned */}
+                    <div className={`self-start flex max-w-[85%] items-start gap-1.5 rounded-2xl rounded-bl-sm px-3 py-1.5 text-sm ${bubble}`}>
+                      <span className="mt-0.5 shrink-0">{icon}</span>
+                      <span>{entry.summary}</span>
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           )}
           <div ref={logEndRef} />
