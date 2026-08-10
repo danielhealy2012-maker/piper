@@ -84,7 +84,6 @@ export function Chat({
   // conversation legitimately has only you in it), so this must not assume a
   // second participant exists.
   const other = users.find((u) => u.id !== viewerId) ?? users[0] ?? null;
-  const me = users.find((u) => u.id === viewerId) ?? null;
   const displayNameFor = (user: DisplayUser) => nicknames?.[user.id] ?? user.name;
   const dark = isDarkWallpaper(theme);
   const headerTextClass = dark ? "text-white" : "text-black";
@@ -231,7 +230,7 @@ export function Chat({
 
           return (
             <div key={message.id} className={`flex items-end gap-2 ${outgoing ? "flex-row-reverse" : "flex-row"}`}>
-              {!outgoing && theme.showAvatars ? <Avatar user={author} size={24} className="mb-1" /> : null}
+              {theme.showAvatars ? <Avatar user={author} size={24} className="mb-1" /> : null}
               <div className={`flex max-w-[75%] flex-col ${outgoing ? "items-end" : "items-start"}`}>
                 <div
                   style={{
@@ -307,12 +306,6 @@ export function Chat({
             setDraft("");
           }}
         >
-          {/* Self-preview: the chat otherwise never shows your OWN avatar
-              anywhere (the header and per-message avatars are both the
-              OTHER person, by design) — this is the only place you can
-              confirm "make my avatar X" actually took, without needing the
-              other person's session. */}
-          <Avatar user={me} size={28} />
           <input
             value={draft}
             onChange={(e) => {
