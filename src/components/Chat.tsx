@@ -3,7 +3,7 @@ import { DEFAULT_SPEC, type Spec } from "../engine/spec";
 import type { ChatMessage } from "../lib/types";
 import type { DisplayUser } from "../lib/backend";
 import { renderAction, type TranslationEntry } from "./slots";
-import { avatarSize, bubbleStyle, fontStack, isDarkWallpaper, rowGap, sentimentColor, wallpaperStyle } from "./theme";
+import { bubbleStyle, fontStack, isDarkWallpaper, rowGap, sentimentColor, wallpaperStyle } from "./theme";
 import { runEffect } from "./effects";
 import { CustomComponentSlot } from "./CustomComponentSlot";
 
@@ -16,16 +16,37 @@ const SEND_ICONS: Record<Spec["theme"]["sendButtonStyle"], string> = {
 
 /** Shared by the header (other person), per-message avatars, and the
  *  composer's self-preview — one place that knows "image if set, else
- *  initials-on-color" so the three spots can't drift out of sync. */
-function Avatar({ user, size, className = "" }: { user: DisplayUser | null | undefined; size: number; className?: string }) {
-  const style = { width: size, height: size };
+ *  initials-on-color" so the three spots can't drift out of sync.
+ *
+ *  Either a fixed pixel `size`, or `stretch: true` — which sizes the avatar
+ *  to exactly match whatever it's a flex sibling of (a message bubble can be
+ *  1 line or 4, and its height also moves with theme.bubbleScale/density/
+ *  font; computing that in JS means picking a formula that's already wrong
+ *  the moment any of those change, which is exactly what happened here.
+ *  `self-stretch` + `aspect-square` makes the browser's own layout engine
+ *  keep it correct instead — no size to keep in sync by hand). */
+function Avatar({
+  user,
+  size,
+  stretch,
+  className = "",
+}: {
+  user: DisplayUser | null | undefined;
+  size?: number;
+  stretch?: boolean;
+  className?: string;
+}) {
+  const style = stretch ? undefined : { width: size, height: size };
+  const sizeClasses = stretch ? "self-stretch aspect-square" : "";
   if (user?.avatarUrl) {
-    return <img src={user.avatarUrl} alt="" className={`shrink-0 rounded-full object-cover ${className}`} style={style} />;
+    return (
+      <img src={user.avatarUrl} alt="" className={`shrink-0 rounded-full object-cover ${sizeClasses} ${className}`} style={style} />
+    );
   }
   return (
     <div
-      className={`flex shrink-0 items-center justify-center rounded-full font-semibold text-white ${className}`}
-      style={{ ...style, background: user?.color ?? "#c7c7cc", fontSize: size * 0.42 }}
+      className={`flex shrink-0 items-center justify-center rounded-full font-semibold text-white ${sizeClasses} ${className}`}
+      style={{ ...style, background: user?.color ?? "#c7c7cc", fontSize: stretch ? undefined : (size ?? 0) * 0.42 }}
     >
       {user?.initials ?? "…"}
     </div>
@@ -229,9 +250,17 @@ export function Chat({
           const translated = translation?.status === "shown" ? translation.text : null;
 
           return (
-            <div key={message.id} className={`flex items-end gap-2 ${outgoing ? "flex-row-reverse" : "flex-row"}`}>
-              {theme.showAvatars ? <Avatar user={author} size={avatarSize(theme.bubbleScale)} className="mb-1" /> : null}
-              <div className={`flex max-w-[75%] flex-col ${outgoing ? "items-end" : "items-start"}`}>
+            // flex-col, not the old single row containing [avatar, column] —
+            // the avatar needs to be a direct flex sibling of ONLY the
+            // bubble (see Avatar's `stretch` mode) so it matches the
+            // bubble's real height, not the height of the bubble plus the
+            // timestamp/reactions rows below it. Meta content lives in its
+            // own blocks after that row instead; items-end/items-start here
+            // (moved from the old inner column) still right/left-aligns
+            // everything the same way.
+            <div key={message.id} className={`flex flex-col gap-1 ${outgoing ? "items-end" : "items-start"}`}>
+              <div className={`flex max-w-[75%] gap-2 ${outgoing ? "flex-row-reverse" : "flex-row"}`}>
+                {theme.showAvatars ? <Avatar user={author} stretch /> : null}
                 <div
                   style={{
                     ...bubbleStyle(theme, outgoing),
@@ -241,47 +270,43 @@ export function Chat({
                 >
                   {translated ?? message.text}
                 </div>
-                {translated ? (
-                  <div
-                    className={`mt-1 max-w-[75%] text-[10px] leading-snug ${
-                      dark ? "text-white/50" : "text-black/45"
-                    } ${outgoing ? "text-right" : "text-left"}`}
-                  >
-                    <div className="font-medium">Original</div>
-                    <div className="italic">&ldquo;{message.text}&rdquo;</div>
-                  </div>
-                ) : null}
-                {(message.reactions && message.reactions.length > 0) || (starredMessageIds && starredMessageIds.has(message.id)) ? (
-                  <div
-                    className={`mt-1 flex items-center gap-0.5 rounded-full bg-white/85 px-1.5 py-0.5 text-xs shadow-sm ${
-                      outgoing ? "self-end" : "self-start"
-                    }`}
-                  >
-                    {message.reactions && message.reactions.map((emoji, i) => (
-                      <span key={`${emoji}-${i}`}>{emoji}</span>
-                    ))}
-                    {starredMessageIds && starredMessageIds.has(message.id) ? (
-                      <span title="starred">⭐</span>
-                    ) : null}
-                  </div>
-                ) : null}
-                <div className="mt-0.5 flex items-center gap-1.5">
-                  {actions.map((action, i) =>
-                    renderAction(action, i, {
-                      message,
-                      outgoing,
-                      draft,
-                      setDraft,
-                      translation,
-                      onTranslate: (target) => onTranslate(message.id, target),
-                    }),
-                  )}
-                  {theme.showTimestamps ? (
-                    <span className={`text-[10px] ${dark ? "text-white/45" : "text-black/35"}`}>
-                      {message.time}
-                    </span>
+              </div>
+              {translated ? (
+                <div
+                  className={`max-w-[75%] text-[10px] leading-snug ${
+                    dark ? "text-white/50" : "text-black/45"
+                  } ${outgoing ? "text-right" : "text-left"}`}
+                >
+                  <div className="font-medium">Original</div>
+                  <div className="italic">&ldquo;{message.text}&rdquo;</div>
+                </div>
+              ) : null}
+              {(message.reactions && message.reactions.length > 0) || (starredMessageIds && starredMessageIds.has(message.id)) ? (
+                <div className="flex items-center gap-0.5 rounded-full bg-white/85 px-1.5 py-0.5 text-xs shadow-sm">
+                  {message.reactions && message.reactions.map((emoji, i) => (
+                    <span key={`${emoji}-${i}`}>{emoji}</span>
+                  ))}
+                  {starredMessageIds && starredMessageIds.has(message.id) ? (
+                    <span title="starred">⭐</span>
                   ) : null}
                 </div>
+              ) : null}
+              <div className="flex items-center gap-1.5">
+                {actions.map((action, i) =>
+                  renderAction(action, i, {
+                    message,
+                    outgoing,
+                    draft,
+                    setDraft,
+                    translation,
+                    onTranslate: (target) => onTranslate(message.id, target),
+                  }),
+                )}
+                {theme.showTimestamps ? (
+                  <span className={`text-[10px] ${dark ? "text-white/45" : "text-black/35"}`}>
+                    {message.time}
+                  </span>
+                ) : null}
               </div>
             </div>
           );
