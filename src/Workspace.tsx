@@ -832,10 +832,7 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
       <div className="flex w-full flex-col gap-4 lg:w-[32rem]">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Piper</h1>
-          <p className="mt-1 text-sm text-black/60">
-            Restyle your own view, or act on the conversation — translate, edit, delete, react.
-            Appearance changes are private to you; messages, reactions and polls are shared.
-          </p>
+          <p className="mt-1 text-sm text-black/60">For Test Use</p>
         </div>
 
         {headerSlot}

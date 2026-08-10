@@ -202,27 +202,35 @@ function ConversationTabs({
   onNew: () => void;
 }) {
   return (
-    <div className="flex items-center gap-1.5 overflow-x-auto border-b border-black/10 bg-white px-4 py-2">
-      {conversations.map((c) => {
-        // A custom title (via "rename this conversation") wins over the
-        // other person's name; otherwise show who's actually in it, or a
-        // clear "nobody's joined this link yet" state rather than a blank tab.
-        const label = c.title !== "New chat" ? c.title : (c.otherName ?? "New chat (no one's joined yet)");
-        return (
-          <button
-            key={c.id}
-            type="button"
-            onClick={() => onSelect(c.id)}
-            className={`shrink-0 rounded-full border px-3 py-1 text-xs transition ${
-              c.id === activeId
-                ? "border-black bg-black text-white font-medium"
-                : "border-black/10 text-black/60 hover:border-black/25"
-            }`}
-          >
-            {label}
-          </button>
-        );
-      })}
+    // "+ New chat" is OUTSIDE the scrolling region on purpose — it used to
+    // be just another item in the same overflow-x-auto row as the tabs,
+    // which meant a long conversation name (or enough tabs) could push it
+    // past the visible edge with no visual hint that there was more to
+    // scroll to. Pinning it as its own flex item guarantees it's always
+    // visible regardless of how many tabs there are or how wide they are.
+    <div className="flex items-center gap-2 border-b border-black/10 bg-white px-4 py-2">
+      <div className="flex flex-1 items-center gap-1.5 overflow-x-auto">
+        {conversations.map((c) => {
+          // A custom title (via "rename this conversation") wins over the
+          // other person's name; otherwise show who's actually in it, or a
+          // clear "nobody's joined this link yet" state rather than a blank tab.
+          const label = c.title !== "New chat" ? c.title : (c.otherName ?? "New chat (no one's joined yet)");
+          return (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => onSelect(c.id)}
+              className={`shrink-0 rounded-full border px-3 py-1 text-xs transition ${
+                c.id === activeId
+                  ? "border-black bg-black text-white font-medium"
+                  : "border-black/10 text-black/60 hover:border-black/25"
+              }`}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
       <button
         type="button"
         onClick={onNew}
