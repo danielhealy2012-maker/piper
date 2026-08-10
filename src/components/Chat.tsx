@@ -14,39 +14,22 @@ const SEND_ICONS: Record<Spec["theme"]["sendButtonStyle"], string> = {
   dot: "●",
 };
 
-/** Shared by the header (other person), per-message avatars, and the
- *  composer's self-preview — one place that knows "image if set, else
- *  initials-on-color" so the three spots can't drift out of sync.
- *
- *  Either a fixed pixel `size`, or `stretch: true` — which sizes the avatar
- *  to exactly match whatever it's a flex sibling of (a message bubble can be
- *  1 line or 4, and its height also moves with theme.bubbleScale/density/
- *  font; computing that in JS means picking a formula that's already wrong
- *  the moment any of those change, which is exactly what happened here.
- *  `self-stretch` + `aspect-square` makes the browser's own layout engine
- *  keep it correct instead — no size to keep in sync by hand). */
-function Avatar({
-  user,
-  size,
-  stretch,
-  className = "",
-}: {
-  user: DisplayUser | null | undefined;
-  size?: number;
-  stretch?: boolean;
-  className?: string;
-}) {
-  const style = stretch ? undefined : { width: size, height: size };
-  const sizeClasses = stretch ? "self-stretch aspect-square" : "";
+/** Shared by the header (other person) and per-message avatars — one place
+ *  that knows "image if set, else initials-on-color" so the two spots can't
+ *  drift out of sync. Fixed pixel `size` — tried scaling this to match the
+ *  bubble's rendered height (both by formula and by CSS stretch) and both
+ *  read as wrong in practice: a bubble's box is mostly padding, so "same
+ *  height as the bubble" visually means "mostly blank circle". A plain fixed
+ *  size is simply the right call here. */
+function Avatar({ user, size, className = "" }: { user: DisplayUser | null | undefined; size: number; className?: string }) {
+  const style = { width: size, height: size };
   if (user?.avatarUrl) {
-    return (
-      <img src={user.avatarUrl} alt="" className={`shrink-0 rounded-full object-cover ${sizeClasses} ${className}`} style={style} />
-    );
+    return <img src={user.avatarUrl} alt="" className={`shrink-0 rounded-full object-cover ${className}`} style={style} />;
   }
   return (
     <div
-      className={`flex shrink-0 items-center justify-center rounded-full font-semibold text-white ${sizeClasses} ${className}`}
-      style={{ ...style, background: user?.color ?? "#c7c7cc", fontSize: stretch ? undefined : (size ?? 0) * 0.42 }}
+      className={`flex shrink-0 items-center justify-center rounded-full font-semibold text-white ${className}`}
+      style={{ ...style, background: user?.color ?? "#c7c7cc", fontSize: size * 0.42 }}
     >
       {user?.initials ?? "…"}
     </div>
@@ -251,16 +234,14 @@ export function Chat({
 
           return (
             // flex-col, not the old single row containing [avatar, column] —
-            // the avatar needs to be a direct flex sibling of ONLY the
-            // bubble (see Avatar's `stretch` mode) so it matches the
-            // bubble's real height, not the height of the bubble plus the
-            // timestamp/reactions rows below it. Meta content lives in its
-            // own blocks after that row instead; items-end/items-start here
-            // (moved from the old inner column) still right/left-aligns
-            // everything the same way.
+            // avatar sits next to just the bubble line, not stretched down
+            // across the timestamp/reactions rows below it. Meta content
+            // lives in its own blocks after that row instead; items-end/
+            // items-start here (moved from the old inner column) still
+            // right/left-aligns everything the same way.
             <div key={message.id} className={`flex flex-col gap-1 ${outgoing ? "items-end" : "items-start"}`}>
-              <div className={`flex max-w-[75%] gap-2 ${outgoing ? "flex-row-reverse" : "flex-row"}`}>
-                {theme.showAvatars ? <Avatar user={author} stretch /> : null}
+              <div className={`flex max-w-[75%] items-end gap-2 ${outgoing ? "flex-row-reverse" : "flex-row"}`}>
+                {theme.showAvatars ? <Avatar user={author} size={32} /> : null}
                 <div
                   style={{
                     ...bubbleStyle(theme, outgoing),
