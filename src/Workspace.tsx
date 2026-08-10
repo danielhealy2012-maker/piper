@@ -863,7 +863,13 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
             thread, contextual panels, composer — all inside a single
             bordered container instead of a form floating separately above
             an unrelated-looking log box. */}
-        <div className="flex min-h-[560px] flex-1 flex-col overflow-hidden rounded-2xl border border-black/10 bg-white">
+        {/* Fixed height, not flex-1/min-h — flex-1 let this grow to fill
+            whatever vertical space the column had, which on a normal
+            viewport made it taller than the Sam-chat panel's fixed 640px and
+            pushed the composer below the fold while trying to also show the
+            whole other chat. A fixed height shorter than 640px keeps both
+            panels visible together without scrolling. */}
+        <div className="flex h-[480px] flex-col overflow-hidden rounded-2xl border border-black/10 bg-white">
           <div className="flex shrink-0 items-center justify-between border-b border-black/10 px-3 py-2">
             <div className="text-xs font-medium uppercase tracking-wide text-black/40">Chat with Piper</div>
             <div className="flex items-center gap-1.5">
