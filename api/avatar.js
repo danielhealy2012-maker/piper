@@ -26,7 +26,11 @@ import { admin, errorMessage, generateImageBuffer, meter, readJsonBody, requireU
 
 const MAX_PROMPT_LENGTH = 400;
 const BUCKET = "backgrounds"; // shared bucket, distinct path prefix — see 0002_image_storage.sql
-const STYLE_SUFFIX = "portrait avatar icon, centered subject, simple flat background, no text, no watermark";
+// NOT "portrait" — that word pushes the image model toward a human face/bust
+// regardless of what the subject actually is, which is exactly wrong for a
+// literal request like "the flag of Japan" (produced a person, not a flag).
+// "icon" alone still reads correctly for character/creature avatars too.
+const STYLE_SUFFIX = "square icon-style image, centered, simple flat background, no text, no watermark";
 
 function promptHash(prompt) {
   // "avatar:" namespace so this never collides with api/image.js's cache

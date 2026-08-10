@@ -477,6 +477,21 @@ export function subscribeConversation(conversationId: string, onChange: () => vo
       console.log("[realtime] reactions change:", payload);
       onChange();
     })
+    // profiles isn't conversation-scoped (no conversation_id column), so this
+    // can't be filtered the way messages/reactions are — it fires on ANY
+    // profile row changing anywhere, not just this conversation's members.
+    // That's fine: onChange() re-fetches via listMembers(conversationId),
+    // which is already correctly scoped, so an occasional wasted refetch from
+    // an unrelated user's profile edit costs nothing. Without this, avatar/
+    // display-name changes (unlike messages/reactions) had NO realtime
+    // signal at all — the person who made the change saw it instantly via
+    // their own local setUsers() call, but the other participant's session
+    // never refetched until something unrelated (a new message) happened to
+    // trigger it.
+    .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, (payload) => {
+      console.log("[realtime] profiles change:", payload);
+      onChange();
+    })
     .subscribe((status) => {
       console.log(`[realtime] subscription status: ${status}`);
     });
