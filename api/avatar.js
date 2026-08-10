@@ -30,7 +30,17 @@ const BUCKET = "backgrounds"; // shared bucket, distinct path prefix — see 000
 // regardless of what the subject actually is, which is exactly wrong for a
 // literal request like "the flag of Japan" (produced a person, not a flag).
 // "icon" alone still reads correctly for character/creature avatars too.
-const STYLE_SUFFIX = "square icon-style image, centered, simple flat background, no text, no watermark";
+//
+// "filling the frame" / "cropped close, no border" is load-bearing, not
+// decoration: without it, "centered, simple flat background" told Flux WHERE
+// the subject goes but never told it to fill the frame, so it rendered small
+// and centered with generous blank background around it — which then reads
+// as "the avatar looks tiny/empty" once that image is cropped into a small
+// circle, since the circle mostly lands on background, not subject. Fixing
+// this in the source image is the right layer — no amount of CSS sizing on
+// the circle fixes an image that's mostly padding to begin with.
+const STYLE_SUFFIX =
+  "square icon-style image, subject filling the entire frame edge-to-edge, close crop, no border or padding around the subject, simple flat background visible only at the very edges if at all, no text, no watermark";
 
 function promptHash(prompt) {
   // "avatar:" namespace so this never collides with api/image.js's cache
