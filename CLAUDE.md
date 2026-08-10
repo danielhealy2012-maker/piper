@@ -18,7 +18,22 @@ The app has two runtime modes, chosen at startup by whether `VITE_SUPABASE_URL` 
 
 Both satisfy the same `ChatBackend` interface (`src/lib/backend.ts`), so `Workspace.tsx`
 (the UI + instruction orchestrator) is backend-agnostic. `App.tsx` only does auth,
-invite-code handling, and picking the backend.
+invite-code handling, picking the backend, and — in multiplayer — which of the user's
+(possibly several) conversations is currently active.
+
+**Multiple conversations per user, each still exactly 2 people.** `db.ts`'s
+`createConversation` always makes a genuinely new conversation (own invite_code, no
+members but you); `listMyConversations` lists all of them for the tab bar
+(`ConversationTabs`). This replaced an earlier `getOrCreateConversation` that always
+returned your MOST RECENT conversation — which meant there was only ever one invite link
+to hand out, so sending it to a second friend silently added them to your conversation
+with the first friend rather than starting something new, and the header's "who am I
+talking to" logic (an arbitrary first non-self match) would then show the wrong person.
+Piper's 2-person assumptions (game logic, the header, typing indicators) are still real —
+this doesn't add group-chat support, it just makes it possible to have several separate
+2-person conversations instead of being stuck with one. Switching tabs remounts
+`Workspace` via a React `key` rather than reconciling in place, since it owns too much
+per-conversation state (messages, spec, undo stack, log) to safely transition live.
 
 **Scope model — the heart of the product.** Enforced twice: in the client and, more
 importantly, by Postgres RLS in `supabase/migrations/0001_init.sql`.

@@ -3,11 +3,16 @@ import type { Session } from "@supabase/supabase-js";
 import { Workspace } from "./Workspace";
 import { SignIn } from "./components/SignIn";
 import { createLocalBackend, createSupabaseBackend } from "./lib/backend";
-import { getOrCreateConversation, joinByInviteCode, signOut } from "./lib/db";
+import { createConversation, joinByInviteCode, listMyConversations, signOut, type ConversationSummary } from "./lib/db";
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
 import { getBuildInfo, type BuildInfo } from "./lib/build-info";
 import { errorMessage } from "./lib/errors";
-import type { Conversation } from "./lib/types";
+
+/** Which conversation you were last looking at, so a reload doesn't dump you
+ *  back on whichever one happens to be "most recent" — session-only in the
+ *  sense that it's just localStorage, no server-side concept of "current"
+ *  conversation exists (you're a member of all of them equally). */
+const ACTIVE_CONVERSATION_KEY = "piper_active_conversation";
 
 /** `?invite=<code>` (or `/join/<code>`) lets a friend join your conversation.
  *  The magic link redirect loses the query string, so we store it in localStorage. */
@@ -85,7 +90,8 @@ function LocalDemo() {
 function Multiplayer() {
   const [session, setSession] = useState<Session | null>(null);
   const [ready, setReady] = useState(false);
-  const [conversation, setConversation] = useState<Conversation | null>(null);
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Call directly instead of useMemo so it re-runs after auth redirects change the URL
   const inviteCode = readInviteCode();
@@ -100,7 +106,9 @@ function Multiplayer() {
     return () => sub.subscription.unsubscribe();
   }, []);
 
-  // Once signed in: honour an invite code, else open (or create) a conversation.
+  // Once signed in: honour an invite code (joins whatever specific
+  // conversation that code points at — unaffected by any of this), then load
+  // every conversation the user belongs to.
   useEffect(() => {
     if (!session) return;
     let alive = true;
@@ -115,11 +123,21 @@ function Multiplayer() {
         } else {
           console.log("[auth] no invite code in URL");
         }
-        const conv = await getOrCreateConversation(session.user.id);
-        console.log("[auth] got conversation:", conv.id);
-        if (alive) setConversation(conv);
+        let list = await listMyConversations(session.user.id);
+        if (list.length === 0) {
+          console.log("[auth] no conversations yet, creating first one");
+          const created = await createConversation(session.user.id);
+          list = [{ ...created, otherName: null }];
+        }
+        if (!alive) return;
+        setConversations(list);
+        // Land back on whichever conversation you were last viewing, if it's
+        // still one of yours (e.g. an invite-code join just now added a new
+        // one, which shouldn't silently steal focus from wherever you were).
+        const stored = localStorage.getItem(ACTIVE_CONVERSATION_KEY);
+        setActiveId(stored && list.some((c) => c.id === stored) ? stored : list[0].id);
       } catch (err) {
-        console.error("Failed to join or create conversation:", err);
+        console.error("Failed to join/list conversations:", err);
         if (alive) setError(errorMessage(err));
       }
     })();
@@ -128,18 +146,91 @@ function Multiplayer() {
     };
   }, [session, inviteCode]);
 
+  useEffect(() => {
+    if (activeId) localStorage.setItem(ACTIVE_CONVERSATION_KEY, activeId);
+  }, [activeId]);
+
+  async function startNewConversation() {
+    if (!session) return;
+    const created = await createConversation(session.user.id);
+    const summary: ConversationSummary = { ...created, otherName: null };
+    setConversations((prev) => [summary, ...prev]);
+    setActiveId(created.id);
+  }
+
   if (!ready) return <Centered>Loading…</Centered>;
   if (!session) return <SignIn inviteCode={inviteCode} />;
   if (error) return <Centered>Something went wrong: {error}</Centered>;
-  if (!conversation) return <Centered>Opening your chat…</Centered>;
+  if (conversations.length === 0 || !activeId) return <Centered>Opening your chat…</Centered>;
+
+  const active = conversations.find((c) => c.id === activeId) ?? conversations[0];
 
   return (
-    <MultiplayerWorkspace
-      conversationId={conversation.id}
-      inviteCode={conversation.invite_code}
-      userId={session.user.id}
-      email={session.user.email ?? ""}
-    />
+    // Not min-h-screen here — Workspace's own root div already is, and
+    // stacking two would make the page taller than one viewport for no
+    // reason (tab-bar height on top of a full 100vh workspace below it).
+    <div className="flex flex-col bg-neutral-100">
+      <ConversationTabs
+        conversations={conversations}
+        activeId={active.id}
+        onSelect={setActiveId}
+        onNew={() => void startNewConversation()}
+      />
+      {/* key forces a full remount on switch — Workspace holds a lot of its
+          own state (messages, spec, undo stack, log) that should start fresh
+          for a different conversation, not gradually reconcile onto it. */}
+      <MultiplayerWorkspace
+        key={active.id}
+        conversationId={active.id}
+        inviteCode={active.invite_code}
+        userId={session.user.id}
+        email={session.user.email ?? ""}
+      />
+    </div>
+  );
+}
+
+function ConversationTabs({
+  conversations,
+  activeId,
+  onSelect,
+  onNew,
+}: {
+  conversations: ConversationSummary[];
+  activeId: string;
+  onSelect: (id: string) => void;
+  onNew: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-1.5 overflow-x-auto border-b border-black/10 bg-white px-4 py-2">
+      {conversations.map((c) => {
+        // A custom title (via "rename this conversation") wins over the
+        // other person's name; otherwise show who's actually in it, or a
+        // clear "nobody's joined this link yet" state rather than a blank tab.
+        const label = c.title !== "New chat" ? c.title : (c.otherName ?? "New chat (no one's joined yet)");
+        return (
+          <button
+            key={c.id}
+            type="button"
+            onClick={() => onSelect(c.id)}
+            className={`shrink-0 rounded-full border px-3 py-1 text-xs transition ${
+              c.id === activeId
+                ? "border-black bg-black text-white font-medium"
+                : "border-black/10 text-black/60 hover:border-black/25"
+            }`}
+          >
+            {label}
+          </button>
+        );
+      })}
+      <button
+        type="button"
+        onClick={onNew}
+        className="shrink-0 rounded-full border border-dashed border-black/20 px-3 py-1 text-xs text-black/50 hover:border-black/40 hover:text-black/70"
+      >
+        + New chat
+      </button>
+    </div>
   );
 }
 

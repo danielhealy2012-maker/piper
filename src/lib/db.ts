@@ -24,47 +24,74 @@ export async function signOut(): Promise<void> {
 // Conversations
 // ---------------------------------------------------------------------------
 
-/** The user's most recent conversation, creating a first one if they have none. */
-export async function getOrCreateConversation(userId: string): Promise<Conversation> {
+/** ALWAYS creates a fresh conversation + membership — this is what makes
+ *  "start a new chat with someone new" possible. Every conversation this
+ *  produces starts genuinely 2-person-or-fewer: its own invite_code, no
+ *  members but you until someone uses that specific link. Deliberately does
+ *  NOT look for an existing conversation first (that was the old
+ *  getOrCreateConversation's job, and the bug it caused): reusing "your most
+ *  recent conversation" is exactly how sending your existing invite link to
+ *  a NEW friend silently turned your chat with the first friend into an
+ *  unintended 3-person room instead of giving the new friend their own. */
+export async function createConversation(userId: string): Promise<Conversation> {
   const sb = requireSupabase();
-  // Get the user's most recent conversation membership
-  const { data: memberships, error: memberError } = await sb
-    .from("conversation_members")
-    .select("conversation_id")
-    .eq("user_id", userId)
-    .order("joined_at", { ascending: false })
-    .limit(1);
-
-  if (memberError) {
-    console.error("[getOrCreateConversation] membership query failed:", memberError);
-  } else if (memberships && memberships.length > 0) {
-    console.log("[getOrCreateConversation] found existing membership, fetching conversation:", memberships[0].conversation_id);
-    const { data: conv, error: convError } = await sb
-      .from("conversations")
-      .select("*")
-      .eq("id", memberships[0].conversation_id)
-      .single();
-    if (convError) {
-      console.error("[getOrCreateConversation] conversation fetch failed:", convError);
-    } else if (conv) {
-      console.log("[getOrCreateConversation] returning existing conversation:", conv.id);
-      return conv as Conversation;
-    }
-  } else {
-    console.log("[getOrCreateConversation] no existing memberships found");
-  }
-
-  console.log("[getOrCreateConversation] creating new conversation for user:", userId);
   const { data: created, error } = await sb
     .from("conversations")
     .insert({ title: "New chat", created_by: userId })
     .select("id, title, created_by, invite_code")
     .single();
   if (error) throw error;
-
   await sb.from("conversation_members").insert({ conversation_id: created.id, user_id: userId });
-  console.log("[getOrCreateConversation] created new conversation:", created.id);
   return created as Conversation;
+}
+
+export interface ConversationSummary extends Conversation {
+  /** The other participant(s)' display name, comma-joined if more than one
+   *  (a pre-existing 3+ person conversation from before this feature
+   *  existed) — null if nobody has joined this conversation's link yet. */
+  otherName: string | null;
+}
+
+/** Every conversation the user belongs to, most recently joined first — the
+ *  data behind the conversation tab switcher. */
+export async function listMyConversations(userId: string): Promise<ConversationSummary[]> {
+  const sb = requireSupabase();
+  const { data: memberships } = await sb
+    .from("conversation_members")
+    .select("conversation_id")
+    .eq("user_id", userId)
+    .order("joined_at", { ascending: false });
+  const convIds = (memberships ?? []).map((m) => m.conversation_id as string);
+  if (convIds.length === 0) return [];
+
+  const [{ data: conversations }, { data: otherMembers }] = await Promise.all([
+    sb.from("conversations").select("id, title, created_by, invite_code").in("id", convIds),
+    sb.from("conversation_members").select("conversation_id, user_id").in("conversation_id", convIds).neq("user_id", userId),
+  ]);
+
+  const otherIds = [...new Set((otherMembers ?? []).map((m) => m.user_id as string))];
+  const { data: otherProfiles } =
+    otherIds.length > 0
+      ? await sb.from("profiles").select("id, display_name").in("id", otherIds)
+      : { data: [] as { id: string; display_name: string }[] };
+  const nameById = new Map((otherProfiles ?? []).map((p) => [p.id as string, p.display_name as string]));
+
+  const namesByConv = new Map<string, string[]>();
+  for (const m of otherMembers ?? []) {
+    const name = nameById.get(m.user_id as string);
+    if (!name) continue;
+    const list = namesByConv.get(m.conversation_id as string) ?? [];
+    list.push(name);
+    namesByConv.set(m.conversation_id as string, list);
+  }
+
+  // Preserve convIds' order (most-recently-joined-by-me first) rather than
+  // whatever order the conversations table happened to return.
+  const byId = new Map((conversations ?? []).map((c) => [c.id as string, c]));
+  return convIds
+    .map((id) => byId.get(id))
+    .filter((c): c is NonNullable<typeof c> => Boolean(c))
+    .map((c) => ({ ...(c as Conversation), otherName: namesByConv.get(c.id as string)?.join(", ") ?? null }));
 }
 
 /** Join via an invite code. Runs as a SECURITY DEFINER function so the joiner
