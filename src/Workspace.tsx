@@ -87,15 +87,26 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
   // refetches on the same signal.
   const refresh = useCallback(async () => {
     console.log("[refresh] fetching shared state...");
-    const [msgs, components, state] = await Promise.all([
+    // getUsers() belongs in this refetch, not just the initial-load effect —
+    // profiles (avatar, display name) changes fire the SAME onChange signal
+    // as messages/shared state (see subscribeConversation), but this
+    // function is what that signal actually calls. Without users included
+    // here, the person who made an avatar change saw it instantly via their
+    // own local setUsers() call right after the action, while the OTHER
+    // participant's session had the correct Realtime event firing and doing
+    // nothing with it — indistinguishable from Realtime not working at all
+    // until you look at what refresh() actually refetches.
+    const [msgs, components, state, nextUsers] = await Promise.all([
       backend.fetchMessages(),
       backend.fetchSharedComponents(),
       backend.fetchSharedState(),
+      backend.getUsers(),
     ]);
     console.log("[refresh] got", msgs.length, "messages,", components.length, "shared components");
     setMessages(msgs);
     setSharedComponents(components);
     setSharedState(state);
+    setUsers(nextUsers);
   }, [backend]);
 
   // Initial load + realtime subscription.
