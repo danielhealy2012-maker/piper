@@ -85,10 +85,17 @@ export interface GenerateAvatarResult {
 }
 
 /** Phase 2 #11. Server-generated and server-written (api/avatar.js) — the
- *  client never sets profiles.avatar_url directly, see that file for why. */
-export async function generateAvatar(prompt: string): Promise<GenerateAvatarResult> {
+ *  client never sets profiles.avatar_url directly, see that file for why.
+ *  `targetUserId` defaults to the caller; passing the OTHER participant's id
+ *  sets THEIR avatar instead — allowed, no approval step, but api/avatar.js
+ *  verifies both ids share `conversationId` before writing anything. */
+export async function generateAvatar(
+  prompt: string,
+  conversationId: string,
+  targetUserId?: string,
+): Promise<GenerateAvatarResult> {
   try {
-    const res = await apiPost("/api/avatar", { prompt });
+    const res = await apiPost("/api/avatar", { prompt, conversationId, targetUserId });
     if (!res.ok) {
       if (res.status === 503) return { ok: false, error: "not available locally" };
       return { ok: false, error: "API error" };

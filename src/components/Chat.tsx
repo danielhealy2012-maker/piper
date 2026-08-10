@@ -14,6 +14,24 @@ const SEND_ICONS: Record<Spec["theme"]["sendButtonStyle"], string> = {
   dot: "●",
 };
 
+/** Shared by the header (other person), per-message avatars, and the
+ *  composer's self-preview — one place that knows "image if set, else
+ *  initials-on-color" so the three spots can't drift out of sync. */
+function Avatar({ user, size, className = "" }: { user: DisplayUser | null | undefined; size: number; className?: string }) {
+  const style = { width: size, height: size };
+  if (user?.avatarUrl) {
+    return <img src={user.avatarUrl} alt="" className={`shrink-0 rounded-full object-cover ${className}`} style={style} />;
+  }
+  return (
+    <div
+      className={`flex shrink-0 items-center justify-center rounded-full font-semibold text-white ${className}`}
+      style={{ ...style, background: user?.color ?? "#c7c7cc", fontSize: size * 0.42 }}
+    >
+      {user?.initials ?? "…"}
+    </div>
+  );
+}
+
 export interface ChatProps {
   spec: Spec;
   messages: ChatMessage[];
@@ -66,6 +84,7 @@ export function Chat({
   // conversation legitimately has only you in it), so this must not assume a
   // second participant exists.
   const other = users.find((u) => u.id !== viewerId) ?? users[0] ?? null;
+  const me = users.find((u) => u.id === viewerId) ?? null;
   const displayNameFor = (user: DisplayUser) => nicknames?.[user.id] ?? user.name;
   const dark = isDarkWallpaper(theme);
   const headerTextClass = dark ? "text-white" : "text-black";
@@ -158,16 +177,7 @@ export function Chat({
         className={`flex items-center gap-2 border-b px-4 py-3 ${headerTextClass} ${headerBorderClass}`}
         style={{ ...(dark ? { background: "#1c1c1e" } : undefined), ...(spec.customCSS.header ?? {}) }}
       >
-        {other?.avatarUrl ? (
-          <img src={other.avatarUrl} alt="" className="h-9 w-9 shrink-0 rounded-full object-cover" />
-        ) : (
-          <div
-            className="flex h-9 w-9 items-center justify-center rounded-full text-xs font-semibold text-white"
-            style={{ background: other?.color ?? "#c7c7cc" }}
-          >
-            {other?.initials ?? "…"}
-          </div>
-        )}
+        <Avatar user={other} size={36} />
         <div className="flex-1 leading-tight">
           <div className="font-semibold">{title}</div>
           <div className={`text-[11px] ${metaTextClass}`}>
@@ -221,18 +231,7 @@ export function Chat({
 
           return (
             <div key={message.id} className={`flex items-end gap-2 ${outgoing ? "flex-row-reverse" : "flex-row"}`}>
-              {!outgoing && theme.showAvatars ? (
-                author?.avatarUrl ? (
-                  <img src={author.avatarUrl} alt="" className="mb-1 h-6 w-6 shrink-0 rounded-full object-cover" />
-                ) : (
-                  <div
-                    className="mb-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
-                    style={{ background: author?.color }}
-                  >
-                    {author?.initials}
-                  </div>
-                )
-              ) : null}
+              {!outgoing && theme.showAvatars ? <Avatar user={author} size={24} className="mb-1" /> : null}
               <div className={`flex max-w-[75%] flex-col ${outgoing ? "items-end" : "items-start"}`}>
                 <div
                   style={{
@@ -308,6 +307,12 @@ export function Chat({
             setDraft("");
           }}
         >
+          {/* Self-preview: the chat otherwise never shows your OWN avatar
+              anywhere (the header and per-message avatars are both the
+              OTHER person, by design) — this is the only place you can
+              confirm "make my avatar X" actually took, without needing the
+              other person's session. */}
+          <Avatar user={me} size={28} />
           <input
             value={draft}
             onChange={(e) => {

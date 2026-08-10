@@ -26,6 +26,7 @@ import {
   writeSharedComponentState,
 } from "./db";
 import { requireSupabase } from "./supabase";
+import { generateAvatar as apiGenerateAvatar } from "./queries";
 import { formatTime, type ChatMessage } from "./types";
 import { DEFAULT_SPEC, type CustomComponentSlot, type Spec } from "../engine/spec";
 import { SEED_MESSAGES, USERS } from "../data/seed";
@@ -58,6 +59,11 @@ export interface ChatBackend {
    *  name, never the other way around. Keyed by that participant's user id. */
   getNicknames(): Promise<Record<string, string>>;
   saveNicknames(nicknames: Record<string, string>): Promise<void>;
+  /** Phase 2 #11. `targetUserId` defaults to the viewer; pass the other
+   *  participant's id to set THEIR avatar instead — see api/avatar.js for
+   *  the membership check that makes this safe to allow with no approval
+   *  step. */
+  generateAvatar(prompt: string, targetUserId?: string): Promise<{ ok: boolean; url?: string; error?: string }>;
   /** Fire-and-forget "I'm typing" signal — caller debounces, this doesn't. */
   sendTyping(): void;
   /** Fires with the OTHER participant's id whenever they signal typing.
@@ -176,6 +182,11 @@ export function createLocalBackend(viewerId: string): ChatBackend {
     },
     async saveNicknames(nicknames) {
       localState.nicknames[viewerId] = nicknames;
+    },
+    async generateAvatar() {
+      // Matches /api/image's local-dev behavior: real generation needs
+      // Supabase Storage, which this bare demo backend doesn't have.
+      return { ok: false, error: "not available locally" };
     },
     sendTyping() {
       typingListeners.forEach((fn) => fn(viewerId));
@@ -363,6 +374,7 @@ export function createSupabaseBackend(conversationId: string, userId: string): C
     saveTheme: (spec) => saveTheme(conversationId, userId, spec),
     getNicknames: () => fetchNicknames(conversationId, userId),
     saveNicknames: (nicknames) => saveNicknames(conversationId, userId, nicknames),
+    generateAvatar: (prompt, targetUserId) => apiGenerateAvatar(prompt, conversationId, targetUserId),
     sendTyping: () => dbSendTyping(conversationId, userId),
     subscribeTyping(onTyping) {
       const channel = dbSubscribeTyping(conversationId, userId, onTyping);
