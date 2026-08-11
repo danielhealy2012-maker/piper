@@ -39,8 +39,8 @@ export const GENRES = {
   },
   ambientEffect: {
     classifierHint:
-      'something decorative should be present or moving CONTINUOUSLY on the screen, with no natural end and no particular trigger — "a snake that slithers around", "floating bubbles", "snow always falling", "stars drifting".',
-    routerHint: 'ambient, always-on decoration — "snow falling in the background", "a fish swimming around"',
+      'something decorative should be present or moving CONTINUOUSLY on the screen, with no natural end and no particular trigger — "a snake that slithers around", "floating bubbles", "snow always falling", "stars drifting". This INCLUDES an animated animal/character/creature described as part of "the background" or "the scene" — e.g. "an animated whale background", "a background with a swimming fish" — the word "background" there does NOT mean this is purely an imageGeneration request. A generated image is always a single static picture; it is physically incapable of motion. Anything in the request that needs to actually MOVE (swim, fly, drift, slither) requires this flag REGARDLESS of whether the word "background" appears — if you skip it, the model has no way to make anything move and will either fake motion by animating the background\'s own color/gradient (which is not what was asked for) or produce a confused explanation blaming an unrelated constraint (the 8 fixed scenes, etc.) instead of just saying it needs ambientEffect too.',
+    routerHint: 'ambient, always-on decoration — "snow falling in the background", "a fish swimming around", "an animated whale/animal background"',
   },
   reactiveEffect: {
     classifierHint:
@@ -61,7 +61,7 @@ export const GENRES = {
   },
   imageGeneration: {
     classifierHint:
-      'the background is described as real pictorial artwork that the 8 bundled illustrated scenes cannot cover — a specific animal, character, object, place, or art style ("a cartoon dog", "watercolor mountains", "pixel art city").',
+      'the background is described as real pictorial artwork that the 8 bundled illustrated scenes cannot cover — a specific animal, character, object, place, or art style ("a cartoon dog", "watercolor mountains", "pixel art city"). This flag alone only ever produces ONE STATIC PICTURE, never motion — if the request also describes that subject moving/animating ("an animated whale background", "a dog running across the screen"), also include ambientEffect for the actual movement; do not treat imageGeneration as sufficient on its own just because "background" was said.',
     routerHint: 'AI-generated background artwork — "a cartoon dog background", "watercolor waves"',
   },
 } as const satisfies Record<string, GenreDef>;
@@ -204,6 +204,7 @@ export const SPECIALIST_SECTIONS: SpecialistSection[] = [
     build: () => [
       "",
       'IMAGE GENERATION: this request describes visual content that needs real generated artwork — an animal, a character, a specific object or place, a style ("cartoon", "watercolor", "pixel art"), something the 8 fixed scenes don\'t cover. Set `backgroundImagePrompt` to a good, specific, safe image-generation prompt (style + subject, e.g. "a cute cartoon dog, flat illustration style, colorful, simple background, no text"). A few seconds after your response, the system will actually generate that image and switch the background to it on its own — you never set `wallpaper` to "generated" or touch `wallpaperUrl` yourself, ever. Instead, set `theme.wallpaper` to a normal value (the closest of the 8 fixed scenes, or a gradient) exactly as you would for any other request — that\'s what\'s shown while generating, and what stays shown if generation fails, so make it a genuine best-effort, not a placeholder. When backgroundImagePrompt is set, leave `limitation` null — the system handles explaining a generation failure itself if one occurs.',
+      "   - If ambientEffect is ALSO part of this request (an animated/moving version of the subject — \"an animated whale background\", \"a background with a swimming fish\"): the generated image itself can only ever be static, so the motion has to come from customEffects.onLoad creating a real moving element (an emoji or a simple drawn shape representing the subject, e.g. 🐳 for a whale) layered on top via container.appendChild, with its own infinite CSS animation, exactly as documented in the customEffects section. This combination — a static generated/fallback background PLUS a moving decorative element on top — genuinely delivers what was asked; it is not a compromise, so leave `limitation` null for it (aside from the normal image-generation-failure case already covered above). Do NOT try to make the background image itself move, and do NOT explain this as a limitation of the 8 fixed scenes — that's a different, unrelated constraint that has nothing to do with why a picture can't move on its own.",
     ],
   },
 ];
