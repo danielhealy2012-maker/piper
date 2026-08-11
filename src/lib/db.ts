@@ -108,6 +108,19 @@ export async function joinByInviteCode(code: string): Promise<string> {
   return data as string;
 }
 
+/** Closes a tab: removes YOUR OWN membership, never the conversation itself
+ *  or its messages — see 0008_leave_conversation.sql for why. The other
+ *  participant (if any) keeps the conversation exactly as it was. */
+export async function leaveConversation(conversationId: string, userId: string): Promise<void> {
+  const sb = requireSupabase();
+  const { error } = await sb
+    .from("conversation_members")
+    .delete()
+    .eq("conversation_id", conversationId)
+    .eq("user_id", userId);
+  if (error) throw error;
+}
+
 export async function listMembers(conversationId: string): Promise<Profile[]> {
   const sb = requireSupabase();
   const { data: members } = await sb

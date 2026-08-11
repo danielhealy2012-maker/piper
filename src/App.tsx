@@ -3,7 +3,14 @@ import type { Session } from "@supabase/supabase-js";
 import { Workspace } from "./Workspace";
 import { SignIn } from "./components/SignIn";
 import { createLocalBackend, createSupabaseBackend } from "./lib/backend";
-import { createConversation, joinByInviteCode, listMyConversations, signOut, type ConversationSummary } from "./lib/db";
+import {
+  createConversation,
+  joinByInviteCode,
+  leaveConversation,
+  listMyConversations,
+  signOut,
+  type ConversationSummary,
+} from "./lib/db";
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
 import { getBuildInfo, type BuildInfo } from "./lib/build-info";
 import { errorMessage } from "./lib/errors";
@@ -158,6 +165,26 @@ function Multiplayer() {
     setActiveId(created.id);
   }
 
+  // "X" on a tab — leaves that conversation (see leaveConversation: only
+  // your own membership is removed, never the conversation or its messages,
+  // so the other participant is completely unaffected). Never leaves you
+  // with zero tabs: closing the last one immediately creates a fresh empty
+  // one, matching the same invariant the initial sign-in bootstrap keeps.
+  async function closeConversation(id: string) {
+    if (!session) return;
+    await leaveConversation(id, session.user.id);
+    const remaining = conversations.filter((c) => c.id !== id);
+    if (remaining.length === 0) {
+      const created = await createConversation(session.user.id);
+      const summary: ConversationSummary = { ...created, otherName: null };
+      setConversations([summary]);
+      setActiveId(created.id);
+      return;
+    }
+    setConversations(remaining);
+    if (activeId === id) setActiveId(remaining[0].id);
+  }
+
   if (!ready) return <Centered>Loading…</Centered>;
   if (!session) return <SignIn inviteCode={inviteCode} />;
   if (error) return <Centered>Something went wrong: {error}</Centered>;
@@ -169,12 +196,17 @@ function Multiplayer() {
     // Not min-h-screen here — Workspace's own root div already is, and
     // stacking two would make the page taller than one viewport for no
     // reason (tab-bar height on top of a full 100vh workspace below it).
-    <div className="flex flex-col bg-neutral-100">
+    // pt-3 + the tab bar's own bigger padding: reported as feeling "hidden"
+    // flush against the very top edge of the browser (easy to mistake for
+    // browser chrome) — this gives it some breathing room and visual weight
+    // instead of reading as an incidental thin sliver.
+    <div className="flex flex-col bg-neutral-100 px-4 pt-3">
       <ConversationTabs
         conversations={conversations}
         activeId={active.id}
         onSelect={setActiveId}
         onNew={() => void startNewConversation()}
+        onClose={(id) => void closeConversation(id)}
       />
       {/* key forces a full remount on switch — Workspace holds a lot of its
           own state (messages, spec, undo stack, log) that should start fresh
@@ -195,11 +227,13 @@ function ConversationTabs({
   activeId,
   onSelect,
   onNew,
+  onClose,
 }: {
   conversations: ConversationSummary[];
   activeId: string;
   onSelect: (id: string) => void;
   onNew: () => void;
+  onClose: (id: string) => void;
 }) {
   return (
     // "+ New chat" is OUTSIDE the scrolling region on purpose — it used to
@@ -208,33 +242,51 @@ function ConversationTabs({
     // past the visible edge with no visual hint that there was more to
     // scroll to. Pinning it as its own flex item guarantees it's always
     // visible regardless of how many tabs there are or how wide they are.
-    <div className="flex items-center gap-2 border-b border-black/10 bg-white px-4 py-2">
-      <div className="flex flex-1 items-center gap-1.5 overflow-x-auto">
+    // py-3 + text-sm (up from py-2/text-xs): reported as feeling too small/
+    // easy to miss at the default size.
+    <div className="flex items-center gap-2 rounded-2xl border border-black/10 bg-white px-4 py-3 shadow-sm">
+      <div className="flex flex-1 items-center gap-2 overflow-x-auto">
         {conversations.map((c) => {
           // A custom title (via "rename this conversation") wins over the
           // other person's name; otherwise show who's actually in it, or a
           // clear "nobody's joined this link yet" state rather than a blank tab.
           const label = c.title !== "New chat" ? c.title : (c.otherName ?? "New chat (no one's joined yet)");
+          const isActive = c.id === activeId;
           return (
-            <button
+            // A <button> can't nest another <button> (the X), so the pill is
+            // a div with two button children instead of one button — select
+            // on the label, close on the X, and the X stops propagation so
+            // clicking it can't also select the tab you're about to leave.
+            <div
               key={c.id}
-              type="button"
-              onClick={() => onSelect(c.id)}
-              className={`shrink-0 rounded-full border px-3 py-1 text-xs transition ${
-                c.id === activeId
-                  ? "border-black bg-black text-white font-medium"
-                  : "border-black/10 text-black/60 hover:border-black/25"
+              className={`flex shrink-0 items-center gap-1 rounded-full border py-1 pl-3 pr-1.5 text-sm transition ${
+                isActive ? "border-black bg-black text-white font-medium" : "border-black/10 text-black/60 hover:border-black/25"
               }`}
             >
-              {label}
-            </button>
+              <button type="button" onClick={() => onSelect(c.id)}>
+                {label}
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onClose(c.id);
+                }}
+                aria-label={`Close ${label}`}
+                className={`rounded-full px-1 leading-none ${
+                  isActive ? "text-white/60 hover:text-white" : "text-black/30 hover:text-black/60"
+                }`}
+              >
+                ✕
+              </button>
+            </div>
           );
         })}
       </div>
       <button
         type="button"
         onClick={onNew}
-        className="shrink-0 rounded-full bg-black px-3 py-1.5 text-xs font-medium text-white hover:bg-black/80"
+        className="shrink-0 rounded-full bg-black px-3 py-1.5 text-sm font-medium text-white hover:bg-black/80"
       >
         + New chat
       </button>
