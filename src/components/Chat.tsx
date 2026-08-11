@@ -125,9 +125,14 @@ export function Chat({
   useEffect(() => {
     const code = spec.customEffects.onLoad;
     const container = effectLayerRef.current;
-    if (!code || !container) return;
+    if (!container) return;
+    // Clear unconditionally, not just when there's new code to run — this
+    // used to bail out entirely when `code` was falsy, which meant reset,
+    // undo, or any new instruction that removed the ambient effect left the
+    // old one (its DOM elements, its infinite CSS animation) running
+    // forever, since nothing ever ran the one line that clears it.
     container.innerHTML = "";
-    runEffect(code, container);
+    if (code) runEffect(code, container);
   }, [spec.customEffects.onLoad]);
 
   const customComponentsFor = (slot: Spec["customComponents"][number]["slot"]) =>
