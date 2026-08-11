@@ -234,7 +234,7 @@ function ConversationTabs({
       <button
         type="button"
         onClick={onNew}
-        className="shrink-0 rounded-full border border-dashed border-black/20 px-3 py-1 text-xs text-black/50 hover:border-black/40 hover:text-black/70"
+        className="shrink-0 rounded-full bg-black px-3 py-1.5 text-xs font-medium text-white hover:bg-black/80"
       >
         + New chat
       </button>
