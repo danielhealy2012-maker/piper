@@ -84,10 +84,14 @@ export function Chat({
 }: ChatProps) {
   const [draft, setDraft] = useState("");
   const theme = spec.theme;
-  // `users` is empty on first render while the backend loads (and a brand-new
-  // conversation legitimately has only you in it), so this must not assume a
-  // second participant exists.
-  const other = users.find((u) => u.id !== viewerId) ?? users[0] ?? null;
+  // `users` is empty on first render while the backend loads, and a
+  // brand-new multiplayer conversation legitimately has only you in it
+  // until someone uses the invite link — the old `?? users[0]` fallback
+  // here defeated the whole point of this comment: with exactly one member
+  // (you), `find` correctly returns nothing, and the fallback then handed
+  // back users[0], which IS you, making the header show your own name as
+  // if you were the other participant in the conversation.
+  const other = users.find((u) => u.id !== viewerId) ?? null;
   const displayNameFor = (user: DisplayUser) => nicknames?.[user.id] ?? user.name;
   const dark = isDarkWallpaper(theme);
   const headerTextClass = dark ? "text-white" : "text-black";
@@ -95,10 +99,16 @@ export function Chat({
   const headerBorderClass = dark ? "border-white/10" : "border-black/10";
   const bottomRef = useRef<HTMLDivElement>(null);
   const effectLayerRef = useRef<HTMLDivElement>(null);
-  // Until the user renames the chat themselves, show whoever they're actually
-  // talking to rather than the seed placeholder.
+  // Until the user renames the chat themselves, show whoever they're
+  // actually talking to rather than the seed placeholder ("Sam Ortega") —
+  // and while no one has joined yet, say so plainly instead of showing
+  // either a fake name or (the bug above) the viewer's own name.
   const title =
-    theme.chatTitle === DEFAULT_SPEC.theme.chatTitle && other?.name ? displayNameFor(other) : theme.chatTitle;
+    theme.chatTitle !== DEFAULT_SPEC.theme.chatTitle
+      ? theme.chatTitle
+      : other?.name
+        ? displayNameFor(other)
+        : "Waiting for someone to join";
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -184,7 +194,7 @@ export function Chat({
         <div className="flex-1 leading-tight">
           <div className="font-semibold">{title}</div>
           <div className={`text-[11px] ${metaTextClass}`}>
-            {other && typingUserId === other.id ? "typing…" : "active now"}
+            {other ? (typingUserId === other.id ? "typing…" : "active now") : "share your invite link to start"}
           </div>
         </div>
         <div className="flex items-center gap-1.5">
