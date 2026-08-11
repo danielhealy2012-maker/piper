@@ -891,7 +891,7 @@ export function Workspace({ backend, onSwitchViewer, headerSlot }: WorkspaceProp
 
           <div className="flex-1 overflow-y-auto p-3">
             {log.length === 0 ? (
-              <div className="text-sm text-black/40">No changes yet — try an instruction, or ask a question.</div>
+              <div className="text-sm text-black/40">No changes yet. Try an instruction, or ask what Piper can do.</div>
             ) : (
               <ul className="flex flex-col gap-2.5">
                 {log.map((entry, i) => {
