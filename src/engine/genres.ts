@@ -127,6 +127,7 @@ export const SPECIALIST_SECTIONS: SpecialistSection[] = [
     needs: ["animation"],
     build: () => [
       '`customCSSText` — a string of raw CSS, injected verbatim in a <style> tag. This is the ONLY place `@keyframes` can be defined. If you want an animated bubble (pulse, wobble, wiggle), define the `@keyframes` here and reference the animation by name in customCSS\'s `animation` property for the relevant zone.',
+      '   - ANIMATED BACKGROUNDS specifically: never write `@keyframes` steps that change `background`/`background-image` to a DIFFERENT gradient string at each step (e.g. 0% one `linear-gradient(...)`, 50% a different one) — gradients are not a type browsers can smoothly interpolate between, so this either jump-cuts abruptly at each keyframe with no visible motion in between, or doesn\'t animate at all. It looks correct in the JSON and is a common mistake. The correct technique: set ONE gradient with `backgroundSize: "400% 400%"` (larger than the element) in customCSS\'s `background` zone, then `@keyframes` that only moves `background-position` (a genuinely interpolatable property) between corners, e.g. `0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; }`, referenced via `animation: <name> 8s ease infinite` on that same zone. This is the ONLY reliable way to make a gradient background appear to shift/move.',
     ],
   },
   {
